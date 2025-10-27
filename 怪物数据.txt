@@ -1,0 +1,113 @@
+【怪物数据导出（来自 src/sandbox.js）】
+
+一、敌人类型（EnemyTypes）
+1) normal（普通）
+  - 生命上限(hp): 40
+  - 移动速度(spd): 80
+  - 攻击力(atk): 12
+  - 仇恨范围(aggro): 180
+  - 体型半径(touchR): 14
+  - 颜色(color): #ff6b6b
+  - 墙碰撞半径(wallCollideR): 6
+  - 护甲(armor): 8（仅当护盾>0 时生效）
+  - 护盾上限(shieldMax): 15
+
+2) runner（奔袭者）
+  - 生命上限(hp): 28
+  - 移动速度(spd): 130
+  - 攻击力(atk): 9
+  - 仇恨范围(aggro): 200
+  - 体型半径(touchR): 12
+  - 颜色(color): #f6c90e
+  - 墙碰撞半径(wallCollideR): 6
+  - 护甲(armor): 1（仅当护盾>0 时生效）
+  - 护盾上限(shieldMax): 5
+
+3) tank（坦克）
+  - 生命上限(hp): 80
+  - 移动速度(spd): 60
+  - 攻击力(atk): 18
+  - 仇恨范围(aggro): 160
+  - 体型半径(touchR): 16
+  - 颜色(color): #6c5ce7
+  - 墙碰撞半径(wallCollideR): 8
+  - 护甲(armor): 4（仅当护盾>0 时生效）
+  - 护盾上限(shieldMax): 30
+
+4) brute（蛮牛）
+  - 生命上限(hp): 150
+  - 移动速度(spd): 85
+  - 攻击力(atk): 22
+  - 仇恨范围(aggro): 180
+  - 体型半径(touchR): 24
+  - 颜色(color): #d35400
+  - 墙碰撞半径(wallCollideR): 16
+  - 护甲(armor): 6（仅当护盾>0 时生效）
+  - 护盾上限(shieldMax): 80
+
+二、实例化字段（makeEnemy 之后）
+  - 位置与速度：x, y, vx, vy
+  - 实际移动速度(spd): 由类型决定，并受状态/增益影响
+  - 当前生命(hp)、生命上限(hpMax)
+  - 当前护盾(shield)、护盾上限(shieldMax)
+  - 护甲(armor)：仅当护盾>0 时减伤
+  - 攻击力(atk)、仇恨范围(aggro)、半径(r)
+  - 存活(alive): 布尔
+  - 行为状态(state): 'rest' | 'patrol'（巡逻） | 'attack'（由攻击标记控制）
+  - 转向冷却(turn): 定时改变随机移动方向
+  - 攻击判定标记(attack): 是否处于追击/攻击状态
+  - 攻击冷却(atkCd)
+  - 颜色(color)
+  - 墙碰撞半径(wallR)
+  - 其它：
+    • showHpUntil: 最近受击显示血条的计时
+    • patrolSince: 巡逻状态起始时间
+    • armor: 护甲（护盾>0 才生效）
+    • 休整护盾相关: lastShieldHour, lastShieldCycle, restHoursForShield, lastRestHourStamp
+
+三、通用行为与机制
+1) 状态机与仇恨：
+  - rest（休整）：靠近玩家（距离 < 1.5×aggro）会转为 patrol。
+  - patrol（巡逻）：玩家距离 < aggro 时设置 attack=true；若 5 秒内无交战回到 rest。
+  - attack（追击/攻击）：距离 > 1.5×aggro 取消 attack，通常回到 patrol。
+
+2) 敌人被动回血（休整时）：
+  - 每经过 1 小时，恢复 hpMax 的 0.6/24（即 24 小时共恢复 60%）。
+
+3) 敌人护盾回复（仅休整持续时）：
+  - 累积休整满 3 小时，恢复 shieldMax 的 25%；可多次结算。
+
+4) 蛮牛（brute）特有：
+  - 战吼增益：每 4–9 秒对半径 220 内友军施加加速，持续 2.5 秒，速度倍率 1.35。
+  - 冲锋：当距离玩家>100 且冷却到达，沿锁定方向冲刺固定距离（约260px），撞树会摧毁树（木材与苹果掉落-1），撞墙对墙造成伤害并结束冲锋；与玩家接触造成高伤害一次，并附带短暂无敌帧。
+
+5) 近身攻击：
+  - 与玩家距离 < (r + 10) 时，若 atkCd≤0 且玩家不在无敌，则造成伤害 atk，并设置 atkCd=0.6 秒；玩家获得约 250ms 受击无敌。
+
+6) 受击与死亡：
+  - 先扣护盾(shield)再扣生命(hp)；若护盾>0 则护甲(armor)提供固定减伤。
+  - 死亡时有概率掉落宝石。
+
+四、移动与寻路
+  - 使用流场(Flow-Field)指引靠近玩家位置；若无路径则直接朝玩家方向，并叠加避障向量（树、墙、工作台）。
+  - 不可进入水域；碰撞检测防止进入障碍物。
+
+五、可视化
+  - 敌人以圆形显示；可选切换显示仇恨圈/警戒圈/体型半径/墙碰撞半径。
+  - 受击后短时显示血条；若有护盾且未满，显示护盾条。
+
+六、字段对照（中英）
+  - hp/hpMax = 生命/生命上限
+  - spd = 移动速度
+  - atk = 攻击力
+  - aggro = 仇恨范围
+  - r/touchR = 体型半径
+  - wallCollideR/wallR = 墙碰撞半径
+  - armor = 护甲（护盾>0生效）
+  - shield/shieldMax = 护盾/护盾上限
+  - alive = 存活标记
+  - state = 行为状态
+  - atkCd = 攻击冷却
+  - color = 颜色
+
+备注：以上数据汇总自 sandbox.js 的 EnemyTypes、makeEnemy、敌人状态更新与战斗逻辑，供策划与调参与本地化参考。

@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>简易塔防 - 单文件版</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #111; color: #eee; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", "PingFang SC", "Microsoft YaHei", sans-serif; }
+    .hud { display: flex; gap: 16px; align-items: center; padding: 12px 16px; background: #1b1b1b; border-bottom: 1px solid #333; position: sticky; top: 0; z-index: 10; }
+    .hint { color: #aaa; margin-left: auto; font-size: 12px; }
+    button { background: #2b7; color: #021; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-weight: 600; }
+    button:hover { filter: brightness(1.1); }
+    #game { display: block; margin: 0 auto; background: #0b0b0b; border-left: 1px solid #333; border-right: 1px solid #333; }
+  </style>
+</head>
+<body>
+  <div class="hud">
+    <div>生命: <span id="lives">20</span></div>
+    <div>金币: <span id="gold">100</span></div>
+    <div>分数: <span id="score">0</span></div>
+    <div>波次: <span id="wave">1</span></div>
+    <button id="startBtn">开始/下一波</button>
+    <span class="hint">左键在非路径网格放置塔(50金币)。右键移除塔(返还30金币)。</span>
+  </div>
+  <canvas id="game" width="800" height="600"></canvas>
+
+  <script>
+  (() => {
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+    const TILE = 40, COLS = (canvas.width/TILE)|0, ROWS = (canvas.height/TILE)|0;
+
+    const waypoints = [{x:0,y:7},{x:6,y:7},{x:6,y:3},{x:13,y:3},{x:13,y:11},{x:19,y:11}];
+
+    const state = {
+      lives: 20, gold: 100, score: 0, wave: 1,
+      inWave: false, spawnTimer: 0, enemiesToSpawn: 0,
+      enemies: [], towers: [], bullets: [], gridBlocked: new Set(),
+    };
+
+    function lineTiles(a,b){const t=[];let x=a.x,y=a.y;while(x!==b.x||y!==b.y){t.push({x,y}); if(x<b.x)x++; else if(x>b.x)x--; else if(y<b.y)y++; else if(y>b.y)y--;} t.push({x:b.x,y:b.y}); return t;}
+    for(let i=0;i<waypoints.length-1;i++) for(const tt of lineTiles(waypoints[i], waypoints[i+1])) state.gridBlocked.add(`${tt.x},${tt.y}`);
+
+    const livesEl = document.getElementById('lives');
+    const goldEl  = document.getElementById('gold');
+    const scoreEl = document.getElementById('score');
+    const waveEl  = document.getElementById('wave');
+    const startBtn= document.getElementById('startBtn');
+
+    class Enemy {
+      constructor(){
+        this.size=22; this.speed=60;
+        this.maxHp=50+(state.wave-1)*12; this.hp=this.maxHp;
+        this.pos={x:waypoints[0].x*TILE+TILE/2,y:waypoints[0].y*TILE+TILE/2};
+        this.wpIndex=1; this.alive=true; this.reward=10;
+      }
+      update(dt){
+        const target=waypoints[this.wpIndex]; if(!target) return;
+        const tx=target.x*TILE+TILE/2, ty=target.y*TILE+TILE/2;
+        const dx=tx-this.pos.x, dy=ty-this.pos.y, dist=Math.hypot(dx,dy)||1, step=this.speed*dt;
+        if(step>=dist){
+          this.pos.x=tx; this.pos.y=ty; this.wpIndex++;
+          if(this.wpIndex>=waypoints.length){ this.alive=false; state.lives--; updateHUD(); }
+        } else { this.pos.x+=dx/dist*step; this.pos.y+=dy/dist*step; }
+      }
+      draw(){
+        const pct=this.hp/this.maxHp;
+        ctx.fillStyle='#c33'; ctx.beginPath(); ctx.arc(this.pos.x,this.pos.y,this.size/2,0,Math.PI*2); ctx.fill();
+        ctx.fillStyle='#222'; ctx.fillRect(this.pos.x-16,this.pos.y-20,32,5);
+        ctx.fillStyle='#3c3'; ctx.fillRect(this.pos.x-16,this.pos.y-20,32*pct,5);
+      }
+    }
+
+    class Tower {
+      constructor(gx,gy){ this.gx=gx; this.gy=gy; this.x=gx*TILE+TILE/2; this.y=gy*TILE+TILE/2;
+        this.range=120; this.cooldown=0; this.fireRate=0.6; this.damage=22; }
+      update(dt){
+        this.cooldown-=dt;
+        if(this.cooldown<=0){
+          const t=acquireTarget(this.x,this.y,this.range);
+          if(t){ shoot(this,t); this.cooldown=1/this.fireRate; }
+        }
+      }
+      draw(){ ctx.fillStyle='#49f'; ctx.fillRect(this.gx*TILE+6,this.gy*TILE+6,TILE-12,TILE-12); }
+    }
+
+    class Bullet {
+      constructor(x,y,target,damage){ this.x=x; this.y=y; this.target=target; this.damage=damage; this.speed=360; this.alive=true; }
+      update(dt){
+        if(!this.target||!this.target.alive){ this.alive=false; return; }
+        const dx=this.target.pos.x-this.x, dy=this.target.pos.y-this.y, dist=Math.hypot(dx,dy)||1, step=this.speed*dt;
+        if(step>=dist){
+          this.target.hp-=this.damage;
+          if(this.target.hp<=0 && this.target.alive){ this.target.alive=false; state.gold+=this.target.reward; state.score+=5; updateHUD(); }
+          this.alive=false;
+        } else { this.x+=dx/dist*step; this.y+=dy/dist*step; }
+      }
+      draw(){ ctx.fillStyle='#ffb400'; ctx.beginPath(); ctx.arc(this.x,this.y,4,0,Math.PI*2); ctx.fill(); }
+    }
+
+    function acquireTarget(x,y,range){ let best=null,bd=Infinity; for(const e of state.enemies){ if(!e.alive) continue; const d=Math.hypot(e.pos.x-x,e.pos.y-y); if(d<=range&&d<bd){best=e; bd=d;} } return best; }
+    function shoot(t,tg){ state.bullets.push(new Bullet(t.x,t.y,tg,t.damage)); }
+    function startWave(){ if(state.inWave) return; state.inWave=true; state.enemiesToSpawn=8+Math.floor(state.wave*1.5); state.spawnTimer=0; }
+    function updateHUD(){ livesEl.textContent=state.lives; goldEl.textContent=state.gold; scoreEl.textContent=state.score; waveEl.textContent=state.wave; }
+
+    startBtn.addEventListener('click',()=>{ if(!state.inWave) startWave(); });
+    canvas.addEventListener('contextmenu',e=>e.preventDefault());
+    canvas.addEventListener('mousedown',(e)=>{
+      const r=canvas.getBoundingClientRect(), x=e.clientX-r.left, y=e.clientY-r.top;
+      const gx=Math.floor(x/TILE), gy=Math.floor(y/TILE), key=`${gx},${gy}`;
+      const on=gx>=0&&gx<COLS&&gy>=0&&gy<ROWS; if(!on) return;
+      if(e.button===0){
+        if(state.gridBlocked.has(key)) return;
+        const exists=state.towers.some(t=>t.gx===gx&&t.gy===gy);
+        if(!exists && state.gold>=50){ state.towers.push(new Tower(gx,gy)); state.gold-=50; updateHUD(); }
+      } else if(e.button===2){
+        const idx=state.towers.findIndex(t=>t.gx===gx&&t.gy===gy);
+        if(idx>=0){ state.towers.splice(idx,1); state.gold+=30; updateHUD(); }
+      }
+    });
+
+    let last=performance.now();
+    function loop(now){ const dt=Math.min(0.033,(now-last)/1000); last=now; update(dt); draw(); requestAnimationFrame(loop); }
+
+    function update(dt){
+      if(state.lives<=0) return;
+      if(state.inWave){
+        state.spawnTimer-=dt;
+        if(state.spawnTimer<=0 && state.enemiesToSpawn>0){
+          state.enemies.push(new Enemy()); state.enemiesToSpawn--; state.spawnTimer=0.7;
+        }
+        if(state.enemiesToSpawn===0 && state.enemies.every(e=>!e.alive)){ state.inWave=false; state.wave++; updateHUD(); }
+      }
+      for(const e of state.enemies) if(e.alive) e.update(dt);
+      state.enemies=state.enemies.filter(e=>e.alive);
+      for(const t of state.towers) t.update(dt);
+      for(const b of state.bullets) if(b.alive) b.update(dt);
+      state.bullets=state.bullets.filter(b=>b.alive);
+    }
+
+    function drawGrid(){
+      ctx.strokeStyle='#222'; ctx.lineWidth=1;
+      for(let x=0;x<=COLS;x++){ ctx.beginPath(); ctx.moveTo(x*TILE,0); ctx.lineTo(x*TILE,ROWS*TILE); ctx.stroke(); }
+      for(let y=0;y<=ROWS;y++){ ctx.beginPath(); ctx.moveTo(0,y*TILE); ctx.lineTo(COLS*TILE,y*TILE); ctx.stroke(); }
+    }
+
+    function drawPath(){
+      ctx.fillStyle='#2a2a2a';
+      for(let y=0;y<ROWS;y++) for(let x=0;x<COLS;x++) if(state.gridBlocked.has(`${x},${y}`)) ctx.fillRect(x*TILE,y*TILE,TILE,TILE);
+    }
+
+    function draw(){
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+      drawPath(); drawGrid();
+      for(const t of state.towers) t.draw();
+      for(const e of state.enemies) e.draw();
+      for(const b of state.bullets) b.draw();
+      if(state.lives<=0) banner('游戏结束','#c33');
+      else if(!state.inWave && state.enemies.length===0) banner('点击“开始/下一波”或继续建塔','#3c3');
+    }
+
+    function banner(text,color){
+      ctx.fillStyle='rgba(0,0,0,0.5)'; ctx.fillRect(100,250,600,100);
+      ctx.fillStyle=color; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.font='28px Segoe UI, Microsoft YaHei, sans-serif';
+      ctx.fillText(text,400,300);
+    }
+
+    updateHUD(); requestAnimationFrame(loop);
+  })();
+  </script>
+</body>
+</html>

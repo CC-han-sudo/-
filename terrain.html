@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>像素地形生成器</title>
+  <style>
+    body{font-family:Segoe UI,Microsoft YaHei,Arial,sans-serif;background:#0f1115;color:#e6e6e6;margin:0;padding:24px}
+    h1{font-size:20px;margin:0 0 12px}
+    .bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:16px}
+    .bar input,.bar select,.bar button{background:#1a1d24;color:#e6e6e6;border:1px solid #2a2f3a;border-radius:6px;padding:8px 10px}
+    .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px}
+    .card{background:#141821;border:1px solid #1f2430;border-radius:10px;padding:12px}
+    .row{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+    .meta{font-size:12px;color:#9aa4b2}
+    canvas{width:256px;height:256px;image-rendering:pixelated;border-radius:6px;border:1px solid #1f2430;background:#000}
+  </style>
+</head>
+<body>
+  <h1>像素地形生成器</h1>
+  <div class="bar">
+    <label>尺寸(px)
+      <select id="size">
+        <option value="256">256</option>
+        <option value="384">384</option>
+        <option value="512" selected>512</option>
+      </select>
+    </label>
+    <label>像素密度
+      <select id="cells">
+        <option value="96">96</option>
+        <option value="128" selected>128</option>
+        <option value="160">160</option>
+      </select>
+    </label>
+    <label>数量
+      <select id="count">
+        <option value="2">2</option>
+        <option value="4" selected>4</option>
+        <option value="6">6</option>
+      </select>
+    </label>
+    <label>种子
+      <input id="seed" placeholder="留空为随机" />
+    </label>
+    <button id="gen">生成</button>
+    <button id="dlAll">全部下载</button>
+  </div>
+  <div id="grid" class="grid"></div>
+  <script src="src/terraingen.js"></script>
+</body>
+</html>

@@ -1,0 +1,90 @@
+【远程系统数据导出（来自 src/sandbox.js）】
+
+一、弓配置（BOWCFG）
+  - 射程(range): 600
+  - 最小倍率(minMult): 0.2
+
+二、玩家与弓相关字段
+  - 是否装备弓(equipped==='bow')
+  - 是否蓄力(bowCharging): 布尔
+  - 当前蓄力值(bowCharge)
+  - 最大蓄力值(bowChargeMax): 1.2
+  - 远程冷却(rangedCd): 数值；与弓逻辑并行存在
+
+三、子弹对象（箭矢）字段（bullets 数组中的元素）
+  - 位置X(x)
+  - 位置Y(y)
+  - 速度X(vx)
+  - 速度Y(vy)
+  - 半径(r)
+  - 伤害(dmg)
+  - 存活标记(alive)
+  - 是否箭矢(isArrow)
+  - 射程(range)
+  - 已飞行距离(dist)
+  - 拖尾数组(trail): 仅满蓄力时为数组，否则为 null
+
+四、发射流程（鼠标抬起触发，需正处于弓蓄力且未在背包/工作台界面）
+  1) 弹药校验：需要“木棍(stick)”≥1，否则取消蓄力并发出提示音。
+  2) 计算蓄力百分比(pct = bowCharge / bowChargeMax，范围0..1)。
+  3) 基础伤害(baseDmg=18)；最终伤害 = baseDmg*(0.5+0.5*pct)，满蓄力时×1.5。
+  4) 基础散布(baseSpread=45°)；实际散布随蓄力降低，并受移动惩罚(movePen)增加。
+  5) 箭速(spd=520)，根据瞄准方向计算速度分量vx, vy。
+  6) 箭矢射程(range = BOWCFG.range*(0.2+0.8*pct))，受移动惩罚降低。
+  7) 消耗1根木棍作为箭矢。
+  8) 生成子弹对象推入 bullets：
+     { x:玩家X, y:玩家Y, vx, vy, r:3, dmg:计算后伤害, alive:true, isArrow:true, range, dist:0, trail: 满蓄力? [] : null }
+  9) 播放射击音效。
+
+五、子弹更新与移除条件
+  - 每帧更新位置：x += vx*dt, y += vy*dt；累积 dist。
+  - 若设置了射程且 dist≥range，则置 alive=false。
+  - 超出玩家较远距离（>2200 像素）则移除。
+
+六、命中判定与伤害（子弹→敌人）
+  - 命中条件：敌人与子弹中心距离 d ≤ 敌人半径 + 子弹半径。
+  - 箭矢距离衰减：
+    ratio = clamp(dist / range, 0..1)
+    mult = max(minMult, 1 - (1-minMult)*ratio)
+    实际伤害 = 子弹伤害 * mult
+  - 先对护盾(shield)结算，再对生命(hp)结算；生成粒子与伤害飘字。
+  - 敌人死亡有几率掉落宝石。
+
+七、渲染：drawBullets()
+  - 箭矢：根据速度方向旋转绘制箭身/箭头/羽毛。
+  - 拖尾：满蓄力箭矢会绘制白色小点拖尾（trail 数组）。
+  - 其它子弹：以黄点圆形绘制。
+
+八、玩家持弓渲染与蓄力条
+  - 若装备弓，会在玩家左手绘制弓形。
+  - 蓄力中或有蓄力时，玩家左侧显示竖向蓄力条；满蓄力变为黄色。
+
+九、与交互的冲突处理
+  - 鼠标左键按下：若装备弓且不在 UI（背包/工作台/放置）则开始蓄力。
+  - 鼠标左键抬起：若正在蓄力则尝试射击并结束蓄力。
+  - 点击树/工作台交互会设置 mouse.down=false，防止误射或近战。
+
+十、关键常量与默认值
+  - 基础伤害(baseDmg): 18
+  - 箭速(spd): 520
+  - 基础散布(baseSpread): 45°
+  - 满蓄力加成: ×1.5
+  - 满蓄力拖尾: trail = []（否则为 null）
+
+十一、字段中英对照（用于本导出）
+  - range = 射程
+  - minMult = 最小倍率
+  - x/y = 位置X/位置Y
+  - vx/vy = 速度X/速度Y
+  - r = 半径
+  - dmg = 伤害
+  - alive = 存活标记
+  - isArrow = 是否箭矢
+  - dist = 已飞行距离
+  - trail = 拖尾数组
+  - bowCharging = 是否蓄力
+  - bowCharge = 当前蓄力值
+  - bowChargeMax = 最大蓄力值
+  - rangedCd = 远程冷却
+
+备注：以上为从 sandbox.js 提取并用中文术语整理的远程系统关键数据、字段与流程说明，便于查阅与维护。

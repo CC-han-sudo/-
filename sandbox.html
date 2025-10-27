@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>像素沙盒 · WASD 角色</title>
+  <style>
+    html,body{height:100%;}
+    body{margin:0;background:#0f1115;color:#e6e6e6;font-family:Segoe UI,Microsoft YaHei,Arial,sans-serif;}
+    #hud{position:fixed;left:12px;top:12px;display:flex;gap:8px;align-items:center;background:rgba(0,0,0,0.35);padding:8px 10px;border:1px solid #1f2430;border-radius:8px}
+    #hud *{font-size:12px}
+    #game{width:100vw;height:100vh;display:block;image-rendering:pixelated;background:#000}
+    #miniCtrl{position:fixed;right:12px;top:120px;display:flex;gap:6px;align-items:center;background:rgba(0,0,0,0.35);padding:6px 8px;border:1px solid #1f2430;border-radius:8px}
+    #miniTime{position:fixed;right:12px;top:160px;background:rgba(0,0,0,0.35);padding:4px 8px;border:1px solid #1f2430;border-radius:8px;font-size:12px}
+    .btn{background:#1a1d24;color:#e6e6e6;border:1px solid #2a2f3a;border-radius:6px;padding:6px 10px;cursor:pointer}
+  </style>
+</head>
+<body>
+  <div id="hud">
+    <button id="regen" class="btn">换个种子</button>
+    <span>WASD 移动 · Shift 冲刺 · R 重置 · 当前种子：<span id="seedView">-</span></span>
+  </div>
+  <div id="miniCtrl">
+    <button id="miniMinus" class="btn">-</button>
+    <button id="miniPlus" class="btn">+</button>
+  </div>
+  <div id="miniTime">时间：--:--</div>
+  <canvas id="game"></canvas>
+  <script src="src/sandbox.js"></script>
+</body>
+</html>

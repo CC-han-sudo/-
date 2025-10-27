@@ -1,0 +1,9 @@
+[build]
+  publish = "/"
+
+# Redirect root to the game entry
+[[redirects]]
+  from = "/"
+  to = "/sandbox.html"
+  status = 302
+  force = true

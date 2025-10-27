@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>塔防 - 多塔/升级/倍速/多地图</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="hud">
+    <div class="left">
+      <div id="greeting"></div>
+      <div>生命: <span id="lives">20</span></div>
+      <div>金币: <span id="gold">100</span></div>
+      <div>分数: <span id="score">0</span></div>
+      <div>波次: <span id="wave">1</span></div>
+      <button id="startBtn">开始/下一波</button>
+    </div>
+    <div class="shop">
+      <span class="shop-title">商店</span>
+      <button class="shop-item" data-type="basic">基础塔(50)</button>
+      <button class="shop-item" data-type="sniper">高伤塔(90)</button>
+      <button class="shop-item" data-type="slow">减速塔(70)</button>
+      <button class="shop-item" data-type="splash">溅射塔(100)</button>
+    </div>
+    <div class="controls">
+      <label>速度</label>
+      <button class="spd" data-speed="0">暂停</button>
+      <button class="spd" data-speed="1">1x</button>
+      <button class="spd" data-speed="2">2x</button>
+      <button class="spd" data-speed="3">3x</button>
+      <label>地图</label>
+      <select id="mapSelect">
+        <option value="map1">地图1</option>
+        <option value="map2">地图2</option>
+        <option value="map3">地图3</option>
+        <option value="clear">透明</option>
+      </select>
+    </div>
+  </div>
+
+  <canvas id="game" width="960" height="640"></canvas>
+
+  <div class="panel" id="towerPanel" hidden>
+    <div>已选塔：<span id="panelName">-</span> Lv.<span id="panelLevel">1</span></div>
+    <div>伤害: <span id="panelDmg">-</span> 射速: <span id="panelRps">-</span> 射程: <span id="panelRange">-</span></div>
+    <div class="panel-actions">
+      <button id="upgradeBtn">升级</button>
+      <button id="sellBtn">出售</button>
+      <button id="closePanelBtn">关闭</button>
+    </div>
+  </div>
+
+  <script src="src/game2.js"></script>
+</body>
+</html>
