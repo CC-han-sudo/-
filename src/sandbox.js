@@ -1481,7 +1481,11 @@
     // open bench UI when clicking near a placed bench
     {
       let bestB=null, bdB=1e9; 
-      for(const b of benches){ const d=Math.hypot(b.x-wp.x, b.y-wp.y); if(d<18 && d<bdB){ bestB=b; bdB=d; } }
+      for(const b of benches){
+        const dClick = Math.hypot(b.x-wp.x, b.y-wp.y);
+        const dPlayer = Math.hypot(b.x-player.x, b.y-player.y);
+        if(dClick<18 && dPlayer<=64 && dClick<bdB){ bestB=b; bdB=dClick; }
+      }
       if(bestB){ benchOpen=true; currentBench=bestB; mouse.down=false; return; }
     }
     // start tree interaction (approach and chop) if clicked near a tree
