@@ -25,6 +25,107 @@
     };
   }
 
+  function drawChestUI(){
+    if(!chestOpen || !currentChest) return;
+    const w = 600, h = 460;
+    const x = (canvas.width - w) >> 1, y = (canvas.height - h) >> 1;
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,0.45)'; ctx.fillRect(0,0,canvas.width,canvas.height);
+    ctx.fillStyle = 'rgba(24,24,24,0.96)'; ctx.fillRect(x, y, w, h);
+    ctx.strokeStyle = '#666'; ctx.lineWidth=2; ctx.strokeRect(x+0.5,y+0.5,w-1,h-1);
+    ctx.fillStyle = '#e6e6e6'; ctx.font='16px Segoe UI, Microsoft YaHei'; ctx.textBaseline='top';
+    ctx.fillText('箱子', x+12, y+10);
+    // inventory list (left) with scrolling and hide zero-count
+    const listX = x+20, listY = y+56, rowH=40;
+    const rawEntries=[
+      ...(inventory.gem>0? [{type:'gem', label:`宝石: ${inventory.gem}`}] : []),
+      ...(inventory.wood>0? [{type:'wood', label:`木材: ${inventory.wood}`}] : []),
+      ...(inventory.plank>0? [{type:'plank', label:`木板: ${inventory.plank}`}] : []),
+      ...(inventory.stick>0? [{type:'stick', label:`木棍: ${inventory.stick}`}] : []),
+      ...(inventory.workbench>0? [{type:'workbench', label:`工作台: ${inventory.workbench}`}] : []),
+      ...(inventory.chest>0? [{type:'chest', label:`箱子: ${inventory.chest}`}] : []),
+      ...(inventory.bow>0? [{type:'bow', label:`弓: ${inventory.bow}${player.equipped==='bow'?' (已装备)':''}`}] : []),
+      ...(inventory.apple>0? [{type:'apple', label:`苹果: ${inventory.apple}`}] : []),
+    ];
+    ctx.fillStyle='#e6e6e6'; ctx.font='16px Segoe UI, Microsoft YaHei';
+    const listViewportH = 200;
+    const totalHChest = rawEntries.length * rowH;
+    const maxScrollChest = Math.max(0, totalHChest - listViewportH);
+    if(chestScroll < 0) chestScroll = 0; else if(chestScroll > maxScrollChest) chestScroll = maxScrollChest;
+    ctx.save(); ctx.beginPath(); ctx.rect(listX-4, listY-4, 260, listViewportH+8); ctx.clip();
+    let curY=listY - chestScroll; const listBounds=[];
+    for(const ent of rawEntries){
+      const rowTop = curY, rowBottom = curY + rowH;
+      const visible = rowBottom >= listY && rowTop <= listY + listViewportH;
+      if(!visible){ curY+=rowH; continue; }
+      if(ent.type===backpackSelectedType){ ctx.strokeStyle='#cbd5e1'; ctx.lineWidth=2; ctx.strokeRect(listX+0.5, curY+0.5, 220-1, rowH-1); }
+      if(ent.type==='gem'){
+        ctx.fillStyle='#f5e663'; ctx.beginPath(); ctx.moveTo(listX+8, curY+8); ctx.lineTo(listX, curY+20); ctx.lineTo(listX+8, curY+32); ctx.lineTo(listX+16, curY+20); ctx.closePath(); ctx.fill();
+      } else if(ent.type==='wood'){
+        ctx.fillStyle='#8b5a2b'; ctx.fillRect(listX, curY+10, 20, 10); ctx.fillStyle='#a87945'; ctx.fillRect(listX, curY+14, 20, 4);
+      } else if(ent.type==='plank'){
+        ctx.fillStyle='#e0d4a3'; ctx.fillRect(listX, curY+10, 20, 10); ctx.fillStyle='#b9a77c'; ctx.fillRect(listX, curY+14, 20, 4);
+      } else if(ent.type==='stick'){
+        ctx.fillStyle='#c8aa7a'; ctx.fillRect(listX, curY+10, 20, 3); ctx.fillRect(listX+4, curY+16, 20, 3);
+      } else if(ent.type==='workbench'){
+        ctx.fillStyle='#6b7280'; ctx.fillRect(listX, curY+10, 20, 10); ctx.strokeStyle='#374151'; ctx.strokeRect(listX+0.5, curY+10.5, 20-1, 10-1);
+      } else if(ent.type==='chest'){
+        ctx.fillStyle='#a16207'; ctx.fillRect(listX, curY+10, 20, 10); ctx.strokeStyle='#713f12'; ctx.strokeRect(listX+0.5, curY+10.5, 20-1, 10-1);
+      } else if(ent.type==='bow'){
+        ctx.strokeStyle='#c89f6a'; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(listX+10, curY+15, 8, -Math.PI/2, Math.PI/2); ctx.stroke(); ctx.strokeStyle='#ddd'; ctx.beginPath(); ctx.moveTo(listX+10, curY+7); ctx.lineTo(listX+10, curY+23); ctx.stroke();
+      }
+      ctx.fillStyle='#e6e6e6'; ctx.fillText(ent.label, listX+32, curY+6);
+      listBounds.push({type: ent.type, x:listX, y:curY, w:220, h:rowH});
+      curY+=rowH;
+    }
+    ctx.restore();
+    // scrollbar
+    const trackX = listX + 232, trackY = listY, trackW = 6, trackH = listViewportH;
+    ctx.save();
+    ctx.globalAlpha = 0.5; ctx.fillStyle = '#2b2b2b'; ctx.fillRect(trackX, trackY, trackW, trackH);
+    let thumbY = trackY, thumbH = trackH;
+    if(maxScrollChest > 0){ thumbH = Math.max(18, Math.floor(trackH * (listViewportH / (totalHChest||1)))); const ratioSB = chestScroll / maxScrollChest; thumbY = Math.round(trackY + (trackH - thumbH) * ratioSB); }
+    ctx.globalAlpha = 0.8; ctx.fillStyle = '#6b7280'; ctx.fillRect(trackX+1, thumbY, trackW-2, thumbH);
+    ctx.restore();
+    // grid 8x8 on right
+    const cols=8, rows=8, cell=44, gap=8;
+    const gridW = cols*cell + (cols-1)*gap, gridH = rows*cell + (rows-1)*gap;
+    const gridX = x + w - gridW - 24, gridY = y + 56;
+    chestLayout = { x,y,w,h, list:listBounds, slots:[], scrollbar:{x:trackX,y:trackY,w:trackW,h:trackH,thumbY,thumbH,maxScroll:maxScrollChest}, listViewport:{x:listX-4,y:listY-4,w:260,h:listViewportH+8} };
+    ctx.strokeStyle='#888'; ctx.lineWidth=2;
+    if(!currentChest.slots) currentChest.slots = new Array(64).fill(null);
+    for(let r=0;r<rows;r++){
+      for(let c=0;c<cols;c++){
+        const idx = r*cols+c; const sx = gridX + c*(cell+gap); const sy = gridY + r*(cell+gap);
+        ctx.fillStyle='rgba(255,255,255,0.05)'; ctx.fillRect(sx,sy,cell,cell);
+        ctx.strokeRect(sx+0.5, sy+0.5, cell-1, cell-1);
+        chestLayout.slots.push({x:sx,y:sy,w:cell,h:cell});
+        const it = currentChest.slots[idx];
+        if(it){
+          if(it.type==='gem'){
+            ctx.fillStyle='#f5e663'; ctx.beginPath(); ctx.moveTo(sx+cell/2, sy+cell/2-10); ctx.lineTo(sx+cell/2-8, sy+cell/2); ctx.lineTo(sx+cell/2, sy+cell/2+10); ctx.lineTo(sx+cell/2+8, sy+cell/2); ctx.closePath(); ctx.fill();
+          } else if(it.type==='wood'){
+            ctx.fillStyle='#8b5a2b'; ctx.fillRect(sx+cell/2-14, sy+cell/2-6, 28, 12); ctx.fillStyle='#a87945'; ctx.fillRect(sx+cell/2-14, sy+cell/2-1, 28, 3);
+          } else if(it.type==='plank'){
+            ctx.fillStyle='#e0d4a3'; ctx.fillRect(sx+cell/2-16, sy+cell/2-8, 32, 16); ctx.fillStyle='#b9a77c'; ctx.fillRect(sx+cell/2-16, sy+cell/2-2, 32, 4);
+          } else if(it.type==='stick'){
+            ctx.fillStyle='#c8aa7a'; ctx.fillRect(sx+cell/2-14, sy+cell/2-1, 28, 3); ctx.fillRect(sx+cell/2-10, sy+cell/2+5, 28, 3);
+          } else if(it.type==='workbench'){
+            ctx.fillStyle='#6b7280'; ctx.fillRect(sx+cell/2-16, sy+cell/2-8, 32, 16); ctx.strokeStyle='#374151'; ctx.strokeRect(sx+cell/2-16+0.5, sy+cell/2-8+0.5, 32-1, 16-1);
+          } else if(it.type==='chest'){
+            ctx.fillStyle='#a16207'; ctx.fillRect(sx+cell/2-16, sy+cell/2-8, 32, 16); ctx.strokeStyle='#713f12'; ctx.strokeRect(sx+cell/2-16+0.5, sy+cell/2-8+0.5, 32-1, 16-1);
+          } else if(it.type==='bow'){
+            ctx.strokeStyle='#c89f6a'; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(sx+cell/2, sy+cell/2, 12, -Math.PI/2, Math.PI/2); ctx.stroke(); ctx.strokeStyle='#ddd'; ctx.beginPath(); ctx.moveTo(sx+cell/2, sy+cell/2-12); ctx.lineTo(sx+cell/2, sy+cell/2+12); ctx.stroke();
+          } else if(it.type==='apple'){
+            ctx.fillStyle='#ef4444'; ctx.beginPath(); ctx.arc(sx+cell/2, sy+cell/2, 9, 0, Math.PI*2); ctx.fill();
+            ctx.fillStyle='#14532d'; ctx.fillRect(sx+cell/2-2, sy+cell/2-10, 4, 6);
+          }
+        }
+      }
+    }
+    ctx.restore();
+  }
+
   // Bow cone preview (shown when pressing G)
   function drawBowCone(){
     if(!showAggroRings) return;
@@ -86,6 +187,15 @@
       ctx.fillStyle = '#6b7280';
       ctx.fillRect(cx - b.r, cy - b.r, sz, sz);
       ctx.strokeStyle = '#374151'; ctx.lineWidth = 2; ctx.strokeRect(cx - b.r + 0.5, cy - b.r + 0.5, sz-1, sz-1);
+    }
+  }
+  function drawChests(){
+    for(const c of chests){
+      const cx = Math.round(c.x - camera.x), cy = Math.round(c.y - camera.y);
+      const sz = c.r*2;
+      ctx.fillStyle = '#a16207'; // brownish chest
+      ctx.fillRect(cx - c.r, cy - c.r, sz, sz);
+      ctx.strokeStyle = '#713f12'; ctx.lineWidth = 2; ctx.strokeRect(cx - c.r + 0.5, cy - c.r + 0.5, sz-1, sz-1);
     }
   }
   
@@ -181,18 +291,30 @@
     ctx.strokeStyle = '#666'; ctx.lineWidth=2; ctx.strokeRect(x+0.5,y+0.5,w-1,h-1);
     ctx.fillStyle = '#e6e6e6'; ctx.font='16px Segoe UI, Microsoft YaHei'; ctx.textBaseline='top';
     ctx.fillText('工作台', x+12, y+10);
-    // inventory list (left)
+    // inventory list (left) with scrolling and hide zero-count
     const listX = x+20, listY = y+56, rowH=40;
-    const entries=[
-      {type:'gem', label:`宝石: ${inventory.gem}`},
-      {type:'wood', label:`木材: ${inventory.wood}`},
-      {type:'plank', label:`木板: ${inventory.plank}`},
-      {type:'stick', label:`木棍: ${inventory.stick}`},
-      {type:'workbench', label:`工作台: ${inventory.workbench}`},
+    const rawEntries=[
+      ...(inventory.gem>0? [{type:'gem', label:`宝石: ${inventory.gem}`}] : []),
+      ...(inventory.wood>0? [{type:'wood', label:`木材: ${inventory.wood}`}] : []),
+      ...(inventory.plank>0? [{type:'plank', label:`木板: ${inventory.plank}`}] : []),
+      ...(inventory.stick>0? [{type:'stick', label:`木棍: ${inventory.stick}`}] : []),
+      ...(inventory.workbench>0? [{type:'workbench', label:`工作台: ${inventory.workbench}`}] : []),
+      ...(inventory.chest>0? [{type:'chest', label:`箱子: ${inventory.chest}`}] : []),
+      ...(inventory.bow>0? [{type:'bow', label:`弓: ${inventory.bow}${player.equipped==='bow'?' (已装备)':''}`}] : []),
+      ...(inventory.apple>0? [{type:'apple', label:`苹果: ${inventory.apple}`}] : []),
     ];
     ctx.fillStyle='#e6e6e6'; ctx.font='16px Segoe UI, Microsoft YaHei';
-    let curY=listY; const listBounds=[];
-    for(const ent of entries){
+    // Match backpack viewport height (200)
+    const listViewportH = 200;
+    const totalHBench = rawEntries.length * rowH;
+    const maxScrollBench = Math.max(0, totalHBench - listViewportH);
+    if(benchScroll < 0) benchScroll = 0; else if(benchScroll > maxScrollBench) benchScroll = maxScrollBench;
+    ctx.save(); ctx.beginPath(); ctx.rect(listX-4, listY-4, 260, listViewportH+8); ctx.clip();
+    let curY=listY - benchScroll; const listBounds=[]; const primaryBtnsLocal=[];
+    for(const ent of rawEntries){
+      const rowTop = curY, rowBottom = curY + rowH;
+      const visible = rowBottom >= listY && rowTop <= listY + listViewportH;
+      if(!visible){ curY+=rowH; continue; }
       // highlight selected row with a light border
       if(ent.type===backpackSelectedType){
         ctx.strokeStyle='#cbd5e1'; ctx.lineWidth=2;
@@ -208,6 +330,8 @@
         ctx.fillStyle='#c8aa7a'; ctx.fillRect(listX, curY+10, 20, 3); ctx.fillRect(listX+4, curY+16, 20, 3);
       } else if(ent.type==='workbench'){
         ctx.fillStyle='#6b7280'; ctx.fillRect(listX, curY+10, 20, 10); ctx.strokeStyle='#374151'; ctx.strokeRect(listX+0.5, curY+10.5, 20-1, 10-1);
+      } else if(ent.type==='chest'){
+        ctx.fillStyle='#a16207'; ctx.fillRect(listX, curY+10, 20, 10); ctx.strokeStyle='#713f12'; ctx.strokeRect(listX+0.5, curY+10.5, 20-1, 10-1);
       } else if(ent.type==='bow'){
         // simple bow icon
         ctx.strokeStyle='#c89f6a'; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(listX+10, curY+15, 8, -Math.PI/2, Math.PI/2); ctx.stroke();
@@ -215,13 +339,45 @@
       }
       ctx.fillStyle='#e6e6e6'; ctx.fillText(ent.label, listX+32, curY+6);
       listBounds.push({type: ent.type, x:listX, y:curY, w:220, h:rowH});
+      // draw per-item primary button（与背包一致，仅对有意义的类型显示）
+      if(ent.type===backpackSelectedType && (ent.type==='plank'||ent.type==='workbench'||ent.type==='chest'||ent.type==='bow'||ent.type==='apple')){
+        const fontPrev = ctx.font; // restore later to avoid text shrinking
+        // primary button
+        let primaryLabel = '使用';
+        if(ent.type==='workbench') primaryLabel='放置';
+        if(ent.type==='chest') primaryLabel='放置';
+        else if(ent.type==='bow') primaryLabel=(player.equipped==='bow'?'卸下':'使用');
+        else if(ent.type==='apple') primaryLabel='食用';
+        const btnW1=56; const uy = curY + 6; const ux = listX + 220 - 6 - btnW1;
+        ctx.fillStyle='#2e7d32'; ctx.fillRect(ux, uy, btnW1, 24);
+        ctx.strokeStyle='#1b5e20'; ctx.strokeRect(ux+0.5, uy+0.5, btnW1-1, 24-1);
+        ctx.fillStyle='#e6e6e6'; ctx.font='14px Segoe UI, Microsoft YaHei'; ctx.textAlign='center'; ctx.textBaseline='middle';
+        ctx.fillText(primaryLabel, ux+btnW1/2, uy+12);
+        primaryBtnsLocal.push({ x:ux, y:uy, w:btnW1, h:24, type: ent.type });
+        // restore drawing defaults (use top baseline to keep rows aligned)
+        ctx.font = fontPrev; ctx.textAlign='left'; ctx.textBaseline='top';
+      }
       curY+=rowH;
     }
+    ctx.restore();
     // 3x3 crafting grid
     const gridCols=3, gridRows=3, cellSz=64, gap=12;
     const gridW = gridCols*cellSz + (gridCols-1)*gap, gridH = gridRows*cellSz + (gridRows-1)*gap;
     const gridX = x + w - gridW - 24, gridY = y + 56;
-    benchLayout = { x,y,w,h, list: listBounds, slots: [] };
+    benchLayout = { x,y,w,h, list: listBounds, slots: [], primaryBtns: primaryBtnsLocal, listViewport: { x:listX-4, y:listY-4, w:260, h:listViewportH+8 } };
+    // draw thin scrollbar (right of list area)
+    const trackXb = listX + 232, trackYb = listY, trackWb = 6, trackHb = listViewportH;
+    ctx.save();
+    ctx.globalAlpha = 0.5; ctx.fillStyle = '#2b2b2b'; ctx.fillRect(trackXb, trackYb, trackWb, trackHb);
+    let thumbYb = trackYb, thumbHb = trackHb;
+    if(maxScrollBench > 0){
+      thumbHb = Math.max(18, Math.floor(trackHb * (listViewportH / (totalHBench||1))));
+      const ratioSB = benchScroll / maxScrollBench;
+      thumbYb = Math.round(trackYb + (trackHb - thumbHb) * ratioSB);
+    }
+    ctx.globalAlpha = 0.8; ctx.fillStyle = '#6b7280'; ctx.fillRect(trackXb+1, thumbYb, trackWb-2, thumbHb);
+    ctx.restore();
+    benchLayout.scrollbar = { x: trackXb, y: trackYb, w: trackWb, h: trackHb, thumbY: thumbYb, thumbH: thumbHb, maxScroll: maxScrollBench };
     ctx.strokeStyle='#888'; ctx.lineWidth=2;
     if(!currentBench.slots) currentBench.slots = new Array(9).fill(null);
     for(let r=0;r<gridRows;r++){
@@ -246,9 +402,57 @@
         }
       }
     }
+    // Bench crafting preview + button
+    const recipe = benchGetRecipe(currentBench.slots||[]);
+    benchLayout.craftBtn = null;
+    if(recipe){
+      // preview label
+      const label = `可合成：${recipe.label}`;
+      ctx.fillStyle='#e6e6e6'; ctx.font='14px Segoe UI, Microsoft YaHei'; ctx.textAlign='left'; ctx.textBaseline='middle';
+      ctx.fillText(label, x+20, y+h-30);
+      // craft button
+      const btnW=72, btnH=26, bx=x+w-24-btnW, by=y+h-36;
+      ctx.fillStyle='#2e7d32'; ctx.fillRect(bx, by, btnW, btnH);
+      ctx.strokeStyle='#1b5e20'; ctx.strokeRect(bx+0.5, by+0.5, btnW-1, btnH-1);
+      ctx.fillStyle='#e6e6e6'; ctx.font='14px Segoe UI, Microsoft YaHei'; ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText('制作', bx+btnW/2, by+btnH/2);
+      benchLayout.craftBtn = { x:bx, y:by, w:btnW, h:btnH };
+    }
     // drag item
     if(dragItem){ const mx=mouse.x,my=mouse.y; if(dragItem.type==='gem'){ ctx.fillStyle='#f5e663'; ctx.beginPath(); ctx.moveTo(mx, my-10); ctx.lineTo(mx-10, my); ctx.lineTo(mx, my+10); ctx.lineTo(mx+10, my); ctx.closePath(); ctx.fill(); } else if(dragItem.type==='wood'){ ctx.fillStyle='#8b5a2b'; ctx.fillRect(mx-12,my-6,24,12); ctx.fillStyle='#a87945'; ctx.fillRect(mx-12,my-1,24,3);} else if(dragItem.type==='plank'){ ctx.fillStyle='#e0d4a3'; ctx.fillRect(mx-14,my-7,28,14); ctx.fillStyle='#b9a77c'; ctx.fillRect(mx-14,my-2,28,4);} else if(dragItem.type==='workbench'){ ctx.fillStyle='#6b7280'; ctx.fillRect(mx-14,my-7,28,14); ctx.strokeStyle='#374151'; ctx.strokeRect(mx-14+0.5,my-7+0.5,28-1,14-1);} }
     ctx.restore();
+  }
+
+  // Determine bench recipe from 3x3 slots. Very simple sample rules.
+  function benchGetRecipe(slots){
+    const cnt={wood:0, plank:0, stick:0}; const idxs={wood:[], plank:[], stick:[]};
+    for(let i=0;i<slots.length;i++){ const it=slots[i]; if(!it) continue; if(cnt[it.type]!=null){ cnt[it.type]++; idxs[it.type].push(i); } }
+    // Check for 2x2 plank square anywhere (workbench合成：4木板→工作台)
+    const twoByTwoSets = [ [0,1,3,4],[1,2,4,5],[3,4,6,7],[4,5,7,8] ];
+    for(const set of twoByTwoSets){ if(set.every(i=>slots[i]?.type==='plank')){
+      return { label:'工作台 ×1', make:()=>{ inventory.workbench=(inventory.workbench||0)+1; }, take:[...set] };
+    }}
+    // 8 planks around center (index 4 empty) → chest ×1
+    const ring = [0,1,2,3,5,6,7,8];
+    if(ring.every(i=>slots[i]?.type==='plank') && !slots[4]){
+      return { label:'箱子 ×1', make:()=>{ inventory.chest=(inventory.chest||0)+1; }, take:[...ring] };
+    }
+    // Priority: bow (3 sticks) > sticks (2 planks) > plank (2 wood)
+    if(cnt.stick>=3){ return { label:'弓 ×1', make:()=>{ inventory.bow=(inventory.bow||0)+1; }, take:[...idxs.stick.slice(0,3)] }; }
+    if(cnt.plank>=2){ return { label:'木棍 ×4', make:()=>{ inventory.stick=(inventory.stick||0)+4; }, take:[...idxs.plank.slice(0,2)] }; }
+    if(cnt.wood>=2){ return { label:'木板 ×1', make:()=>{ inventory.plank=(inventory.plank||0)+1; }, take:[...idxs.wood.slice(0,2)] }; }
+    return null;
+  }
+
+  function performBenchCraft(){
+    if(!benchOpen||!currentBench) return false;
+    const recipe = benchGetRecipe(currentBench.slots||[]);
+    if(!recipe) return false;
+    // consume inputs
+    for(const i of recipe.take){ currentBench.slots[i]=null; }
+    // produce output
+    try{ recipe.make(); sfxPickup(); }catch(_){ }
+    return true;
   }
 
   function drawDebugPanel(){
@@ -437,6 +641,7 @@
     if(inventory.plank>0) entries.push({type:'plank', label:`木板: ${inventory.plank}`});
     if(inventory.stick>0) entries.push({type:'stick', label:`木棍: ${inventory.stick}`});
     if(inventory.workbench>0) entries.push({type:'workbench', label:`工作台: ${inventory.workbench}`});
+    if(inventory.chest>0) entries.push({type:'chest', label:`箱子: ${inventory.chest}`});
     if(inventory.bow>0) entries.push({type:'bow', label:`弓: ${inventory.bow}${player.equipped==='bow'?' (已装备)':''}`});
     if(inventory.apple>0) entries.push({type:'apple', label:`苹果: ${inventory.apple}`});
     ctx.fillStyle='#e6e6e6'; ctx.font='16px Segoe UI, Microsoft YaHei';
@@ -602,6 +807,14 @@
           ctx.fillStyle='#e6e6e6'; ctx.font='14px Segoe UI, Microsoft YaHei'; ctx.textAlign='center'; ctx.textBaseline='middle';
           ctx.fillText('放置', ux+28, uy+12);
           backpackLayout.benchUseBtn = { x:ux, y:uy, w:btnW, h:24 };
+          ctx.textAlign='left'; ctx.textBaseline='alphabetic';
+        } else if(backpackSelectedType==='chest' && inventory.chest>0){
+          const btnW=56; const ux = row.x + 220 - pad - btnW;
+          ctx.fillStyle='#4b5563'; ctx.fillRect(ux, uy, btnW, 24);
+          ctx.strokeStyle='#1f2937'; ctx.strokeRect(ux+0.5, uy+0.5, 56-1, 24-1);
+          ctx.fillStyle='#e6e6e6'; ctx.font='14px Segoe UI, Microsoft YaHei'; ctx.textAlign='center'; ctx.textBaseline='middle';
+          ctx.fillText('放置', ux+28, uy+12);
+          backpackLayout.chestUseBtn = { x:ux, y:uy, w:btnW, h:24 };
           ctx.textAlign='left'; ctx.textBaseline='alphabetic';
         } else if(backpackSelectedType==='bow' && inventory.bow>0){
           const btnW=72; const ux = row.x + 220 - pad - btnW;
@@ -1059,11 +1272,15 @@
   const chop = { active:false, time:0, total:0, treeId:null };
   let backpackOpen = false;
   let benchOpen = false; let currentBench = null;
+  let benchScroll = 0;
+  let chestOpen = false; let currentChest = null; let chestScroll = 0;
+  const chests = [];
   let uiPanel = 'bag';
   // Backpack layout and crafting grid state
   const craftingSlots = [null,null,null,null]; // 2x2 right-side grid
   let backpackLayout = { x:0,y:0,w:0,h:0, list:[], slots:[] };
   let benchLayout = { x:0,y:0,w:0,h:0, list:[], slots:[] };
+  let chestLayout = { x:0,y:0,w:0,h:0, list:[], slots:[] };
   let dragItem = null; // {type:'gem'|'wood', origin:'list'|'slot', slotIndex?:number}
   // Skip one world click (e.g., after bow shot release) to avoid unintended interactions
   let skipWorldClickOnce = false;
@@ -1343,6 +1560,11 @@
         dragItem=null; benchOpen=false; currentBench=null; 
         return;
       }
+      // If chest is open, just close (no refund logic)
+      if(chestOpen){
+        dragItem=null; chestOpen=false; currentChest=null;
+        return;
+      }
       // Otherwise toggle backpack
       if(backpackOpen){ closeBackpackRefund(); backpackSelectedType = null; }
       else { backpackOpen = true; uiPanel='bag'; backpackSelectedType = null; }
@@ -1364,7 +1586,8 @@
     backpackScroll = Math.max(0, Math.min((backpackLayout?.maxScroll||0), backpackScroll + delta));
   }, { passive:false });
   window.addEventListener('keyup', (e)=>{ keys.delete(e.code); });
-  canvas.addEventListener('mousemove',(e)=>{ const r=canvas.getBoundingClientRect(); mouse.x=e.clientX-r.left; mouse.y=e.clientY-r.top; 
+  canvas.addEventListener('mousemove',(e)=>{
+    const r=canvas.getBoundingClientRect(); mouse.x=e.clientX-r.left; mouse.y=e.clientY-r.top; 
     // Activate drag from list if moved beyond threshold
     if(backpackOpen && listDragArmed && listMouseDown && !listDragActive){
       const dx = mouse.x - listMouseDown.x, dy = mouse.y - listMouseDown.y;
@@ -1372,13 +1595,32 @@
         if(invCount(listMouseDown.type)>0){ dragItem = { type: listMouseDown.type, origin:'list' }; listDragActive=true; backpackSelectedType=null; }
       }
     }
-    // scrollbar drag
+    // scrollbar drag (backpack)
     if(backpackOpen && scrollDrag && backpackLayout && backpackLayout.scrollbar){
       const sc = backpackLayout.scrollbar; const dy = mouse.y - scrollDragStartY; const trackMov = Math.max(1, sc.h - sc.thumbH);
       const ratio = Math.max(0, Math.min(1, ((sc.thumbY - sc.y) + dy) / trackMov));
       backpackScroll = Math.round(ratio * (backpackLayout.maxScroll||0));
     }
+    // scrollbar drag (bench)
+    if(benchOpen && scrollDrag && benchLayout && benchLayout.scrollbar){
+      const sc = benchLayout.scrollbar; const dy = mouse.y - scrollDragStartY; const trackMov = Math.max(1, sc.h - sc.thumbH);
+      const ratio = Math.max(0, Math.min(1, ((sc.thumbY - sc.y) + dy) / trackMov));
+      benchScroll = Math.round(ratio * (sc.maxScroll||0));
+    }
   });
+
+  // Wheel scrolling for bench list (same feel as backpack)
+  canvas.addEventListener('wheel',(e)=>{
+    if(!benchOpen || !benchLayout || !benchLayout.listViewport) return;
+    const r = canvas.getBoundingClientRect();
+    const mx = e.clientX - r.left, my = e.clientY - r.top;
+    const v = benchLayout.listViewport;
+    const inside = (mx>=v.x && mx<=v.x+v.w && my>=v.y && my<=v.y+v.h);
+    if(!inside) return;
+    const delta = Math.sign(e.deltaY) * 40; // step per wheel
+    benchScroll = Math.max(0, Math.min((benchLayout.scrollbar?.maxScroll)||0, benchScroll + delta));
+    e.preventDefault();
+  }, { passive:false });
   canvas.addEventListener('mousedown',(e)=>{ 
     if(e.button===0){
       mouse.down=true; 
@@ -1403,6 +1645,7 @@
         // buttons first (inside highlighted row)
         if(backpackLayout.plankUseBtn){ const b=backpackLayout.plankUseBtn; if(mx>=b.x&&mx<=b.x+b.w&&my>=b.y&&my<=b.y+b.h){ placeMode.active=true; placeMode.type='wall'; placeMode.skipClick=true; closeBackpackRefund(); return; } }
         if(backpackLayout.benchUseBtn){ const b=backpackLayout.benchUseBtn; if(mx>=b.x&&mx<=b.x+b.w&&my>=b.y&&my<=b.y+b.h){ placeMode.active=true; placeMode.type='bench'; placeMode.skipClick=true; closeBackpackRefund(); return; } }
+        if(backpackLayout.chestUseBtn){ const b=backpackLayout.chestUseBtn; if(mx>=b.x&&mx<=b.x+b.w&&my>=b.y&&my<=b.y+b.h){ placeMode.active=true; placeMode.type='chest'; placeMode.skipClick=true; closeBackpackRefund(); return; } }
         if(backpackLayout.bowUseBtn){ const b=backpackLayout.bowUseBtn; if(mx>=b.x&&mx<=b.x+b.w&&my>=b.y&&my<=b.y+b.h){ player.equipped = (player.equipped==='bow'?'none':'bow'); return; } }
         if(backpackLayout.appleUseBtn){ const b=backpackLayout.appleUseBtn; if(mx>=b.x&&mx<=b.x+b.w&&my>=b.y&&my<=b.y+b.h){ if(inventory.apple>0){ inventory.apple--; const gain=(player.foodMax||1)*0.20; player.food = Math.min((player.foodMax||0), (player.food||0)+gain); pickupTexts.push({x:player.x,y:player.y-10,txt:`食物 +${Math.round((gain/(player.foodMax||1))*100)}%`,color:'#4ade80',a:1,vy:-28}); sfxPickup(); } return; } }
         // craft button
@@ -1432,11 +1675,34 @@
         }
       } else if(benchOpen && currentBench){
         const mx = mouse.x, my = mouse.y;
-        for(const it of (benchLayout.list||[])){
-          if(mx>=it.x && mx<=it.x+it.w && my>=it.y && my<=it.y+it.h){ if(invCount(it.type)>0){ dragItem = { type: it.type, origin:'list' }; } return; }
-        }
+        // clicks on list仅用于拖拽/选择由双击完成，这里不处理单击选中
         for(let i=0;i<benchLayout.slots.length;i++){
-          const s = benchLayout.slots[i]; if(mx>=s.x && mx<=s.x+s.w && my>=s.y && my<=s.y+s.h){ if(currentBench.slots[i]){ dragItem = { type: currentBench.slots[i].type, origin:'bench', slotIndex:i }; currentBench.slots[i]=null; } return; }
+          const s = benchLayout.slots[i];
+          if(mx>=s.x && mx<=s.x+s.w && my>=s.y && my<=s.y+s.h){
+            if(currentBench.slots[i]){
+              // take from slot
+              dragItem = { type: currentBench.slots[i].type, origin:'bench', slotIndex:i }; currentBench.slots[i]=null; 
+            }else if(backpackSelectedType && invDec(backpackSelectedType)){
+              // place selected type into empty slot, allow repeated clicks
+              currentBench.slots[i] = { type: backpackSelectedType };
+            }
+            return;
+          }
+        }
+        // primary button actions（与背包一致）
+        if(benchLayout && Array.isArray(benchLayout.primaryBtns)){
+          const r = canvas.getBoundingClientRect();
+          const mx = e.clientX - r.left, my = e.clientY - r.top;
+          for(const b of benchLayout.primaryBtns){
+            if(mx>=b.x && mx<=b.x+b.w && my>=b.y && my<=b.y+b.h){
+              const t=b.type;
+              if(t==='plank'){ placeMode.active=true; placeMode.type='wall'; placeMode.skipClick=true; return; }
+              if(t==='workbench'){ placeMode.active=true; placeMode.type='bench'; placeMode.skipClick=true; return; }
+              if(t==='chest'){ placeMode.active=true; placeMode.type='chest'; placeMode.skipClick=true; return; }
+              if(t==='bow'){ player.equipped = (player.equipped==='bow'?'none':'bow'); return; }
+              if(t==='apple'){ if(inventory.apple>0){ inventory.apple--; const gain=(player.foodMax||1)*0.20; player.food = Math.min((player.foodMax||0), (player.food||0)+gain); pickupTexts.push({x:player.x,y:player.y-10,txt:`食物 +${Math.round((gain/(player.foodMax||1))*100)}%`,color:'#4ade80',a:1,vy:-28}); sfxPickup(); } return; }
+            }
+          }
         }
       }
     }
@@ -1468,6 +1734,14 @@
           inventory.workbench -= 1;
           sfxPickup();
         }
+      } else if(placeMode.type==='chest' && inventory.chest>0){
+        let duplicate=false; for(const c of chests){ if(Math.abs(c.x - sx) < 1 && Math.abs(c.y - sy) < 1){ duplicate=true; break; } }
+        const tooClosePlayer = Math.hypot(sx - player.x, sy - player.y) <= (cell/2 + 12);
+        if(!duplicate && !tooClosePlayer && !isWaterArea(sx, sy, cell*0.4) && !collidesTree(sx, sy, 10) && !collidesWall(sx, sy, Math.max(1, cell/2 - 2))){
+          chests.push({ x: sx, y: sy, r: cell/2, slots: new Array(64).fill(null) });
+          inventory.chest -= 1;
+          sfxPickup();
+        }
       }
       placeMode.active=false; placeMode.type=null;
       return;
@@ -1486,7 +1760,17 @@
         const dPlayer = Math.hypot(b.x-player.x, b.y-player.y);
         if(dClick<18 && dPlayer<=64 && dClick<bdB){ bestB=b; bdB=dClick; }
       }
-      if(bestB){ benchOpen=true; currentBench=bestB; mouse.down=false; return; }
+      if(bestB){ benchOpen=true; currentBench=bestB; backpackSelectedType=null; mouse.down=false; return; }
+    }
+    // open chest UI when clicking near a placed chest
+    {
+      let bestC=null, bdC=1e9;
+      for(const c of chests){
+        const dClick = Math.hypot(c.x-wp.x, c.y-wp.y);
+        const dPlayer = Math.hypot(c.x-player.x, c.y-player.y);
+        if(dClick<18 && dPlayer<=64 && dClick<bdC){ bestC=c; bdC=dClick; }
+      }
+      if(bestC){ chestOpen=true; currentChest=bestC; backpackSelectedType=null; mouse.down=false; return; }
     }
     // start tree interaction (approach and chop) if clicked near a tree
     let best=null, bd=1e9;
@@ -1579,11 +1863,21 @@
   }});
   // Double-click to select a list item (show buttons) without dragging
   canvas.addEventListener('dblclick',(e)=>{
-    if(!backpackOpen) return;
+    if(!backpackOpen && !benchOpen && !chestOpen) return;
     e.preventDefault();
     const r=canvas.getBoundingClientRect(); const mx=e.clientX-r.left, my=e.clientY-r.top;
-    if(backpackLayout && Array.isArray(backpackLayout.list)){
+    if(backpackOpen && backpackLayout && Array.isArray(backpackLayout.list)){
       for(const it of backpackLayout.list){
+        if(mx>=it.x && mx<=it.x+it.w && my>=it.y && my<=it.y+it.h){ backpackSelectedType = it.type; break; }
+      }
+    }
+    if(benchOpen && benchLayout && Array.isArray(benchLayout.list)){
+      for(const it of benchLayout.list){
+        if(mx>=it.x && mx<=it.x+it.w && my>=it.y && my<=it.y+it.h){ backpackSelectedType = it.type; break; }
+      }
+    }
+    if(chestOpen && chestLayout && Array.isArray(chestLayout.list)){
+      for(const it of chestLayout.list){
         if(mx>=it.x && mx<=it.x+it.w && my>=it.y && my<=it.y+it.h){ backpackSelectedType = it.type; break; }
       }
     }
@@ -1596,7 +1890,10 @@
       dragItem=null; listMouseDown=null; listDragArmed=false; listDragActive=false; backpackSelectedType=null; return;
     }
     if(benchOpen){
-      dragItem=null; return;
+      dragItem=null; backpackSelectedType=null; return;
+    }
+    if(chestOpen){
+      dragItem=null; backpackSelectedType=null; return;
     }
     // Cancel placement mode and tree interaction in world
     placeMode.active=false; placeMode.type=null;
@@ -1618,6 +1915,30 @@
         else if(b2 && mx>=b2.x && mx<=b2.x+b2.w && my>=b2.y && my<=b2.y+b2.h){ uiPanel='skills'; beep(620,0.03,'square'); }
       }
     }
+    // Bench craft button click
+    if(benchOpen && benchLayout && benchLayout.craftBtn){
+      const r = canvas.getBoundingClientRect();
+      const mx = e.clientX - r.left, my = e.clientY - r.top;
+      const b = benchLayout.craftBtn;
+      if(mx>=b.x && mx<=b.x+b.w && my>=b.y && my<=b.y+b.h){
+        if(performBenchCraft()){
+          // prevent other actions this click
+          mouse.down=false; e.preventDefault(); return;
+        }
+      }
+    }
+    // Bench scrollbar interactions
+    if(benchOpen && benchLayout && benchLayout.scrollbar){
+      const r = canvas.getBoundingClientRect();
+      const mx = e.clientX - r.left, my = e.clientY - r.top;
+      const sc = benchLayout.scrollbar; const withinTrack = (mx>=sc.x && mx<=sc.x+sc.w && my>=sc.y && my<=sc.y+sc.h);
+      if(withinTrack){
+        if(my>=sc.thumbY && my<=sc.thumbY+sc.thumbH){ scrollDrag=true; scrollDragStartY=my; scrollStartScroll=benchScroll; return; }
+        const ratio = Math.max(0, Math.min(1, (my - sc.y - sc.thumbH/2) / Math.max(1, (sc.h - sc.thumbH)) ));
+        benchScroll = Math.round(ratio * (sc.maxScroll||0));
+        return;
+      }
+    }
   });
   if(miniMinus) miniMinus.addEventListener('click',()=>{ minimapStep = Math.max(1, minimapStep-1); beep(520,0.03,'square'); });
   if(miniPlus)  miniPlus.addEventListener('click',()=>{ minimapStep = Math.max(minimapStep, Math.min(24, minimapStep+1)); beep(620,0.03,'square'); });
@@ -1628,7 +1949,7 @@
       camera.x = player.x - canvas.width/2; camera.y = player.y - canvas.height/2;
       return;
     }
-    if(benchOpen){ camera.x = player.x - canvas.width/2; camera.y = player.y - canvas.height/2; return; }
+    if(benchOpen||chestOpen){ camera.x = player.x - canvas.width/2; camera.y = player.y - canvas.height/2; return; }
     // Food-based modifiers (affect regen and movement)
     const secPerHour = dayLength/24;
     const foodPct0 = (player.foodMax? (player.food/(player.foodMax||1)) : 0);
@@ -2447,6 +2768,7 @@
     drawDamageTexts();
     drawDrops();
     drawBenches();
+    drawChests();
     drawWalls();
     drawPlacementPreview();
     drawPickupTexts();
@@ -2467,6 +2789,7 @@
     drawDayNightOverlay();
     drawBackpack();
     drawWorkbenchUI();
+    drawChestUI();
     drawInventoryHUD();
     drawMinimap();
     setMiniTimeText();
