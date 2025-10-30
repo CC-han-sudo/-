@@ -53,39 +53,10 @@
     const sand={};{ const {c,x}=mkCvs(); drawRect(x,'#caa96a',0,0,16,16); x.fillStyle='#b99355'; for(let i=0;i<8;i++){ x.fillRect((i*6+1)%16,(i*7+4)%16,1,1);} sand.img=new Image(); sand.img.src=c.toDataURL('image/png'); }
     const waterDeep={};{ const {c,x}=mkCvs(); drawRect(x,'#1a4060',0,0,16,16); x.fillStyle='#215780'; for(let i=0;i<10;i++){ x.fillRect((i*6+3)%16,(i*5+2)%16,1,1);} waterDeep.img=new Image(); waterDeep.img.src=c.toDataURL('image/png'); }
     const waterShallow={};{ const {c,x}=mkCvs(); drawRect(x,'#256a96',0,0,16,16); x.fillStyle='#2e7fb3'; for(let i=0;i<8;i++){ x.fillRect((i*5+1)%16,(i*7+5)%16,1,1);} waterShallow.img=new Image(); waterShallow.img.src=c.toDataURL('image/png'); }
-    const treeSprite={};{ const {c,x}=mkCvs(16,16);
-      x.clearRect(0,0,16,16); x.imageSmoothingEnabled=false;
-      // palette tuned to reference
-      const COL={ out:'#182118', mid:'#2f6f3f', dark:'#214d2b', lite:'#4aa35a', trunk:'#704c31', trunkHi:'#8a6a4d' };
-      // build canopy mask: 3 overlapping circles
-      const mask=[]; for(let y=0;y<16;y++){ mask[y]=new Uint8Array(16); }
-      const discs=[ {cx:8, cy:5, r:4}, {cx:9, cy:7, r:4}, {cx:7, cy:9, r:4} ];
-      for(const d of discs){ const r2=d.r*d.r; for(let y=0;y<16;y++){ for(let x0=0;x0<16;x0++){ const dx=x0-d.cx, dy=y-d.cy; if(dx*dx+dy*dy<=r2) mask[y][x0]=1; } } }
-      // draw fill with shading and highlight bands
-      for(let y=0;y<16;y++){
-        for(let x0=0;x0<16;x0++){
-          if(!mask[y][x0]) continue;
-          // simple lighting: top-right highlight, bottom shadow
-          const light = (x0*0.7 - y*0.9);
-          const base = COL.mid;
-          let col = base;
-          if(light>1.5 && y<=8) col = COL.lite; else if(y>=8) col = COL.dark;
-          x.fillStyle=col; x.fillRect(x0, y, 1, 1);
-        }
-      }
-      // no black outline per request; keep soft edge implied by shading
-      // trunk and roots (bottom center)
-      x.fillStyle=COL.trunk; x.fillRect(7,10,2,5); x.fillStyle=COL.trunkHi; x.fillRect(7,11,1,3);
-      x.fillStyle=COL.trunk; x.fillRect(6,15,4,1);
+    const treeSprite={};{ const {c,x}=mkCvs(16,16); // simple round canopy + trunk
+      x.fillStyle='#5a3d26'; x.fillRect(7,7,2,9); // trunk
+      x.fillStyle='#2f6b3a'; x.beginPath(); x.arc(8,6,6,0,Math.PI*2); x.fill();
       treeSprite.img=new Image(); treeSprite.img.src=c.toDataURL('image/png'); }
-    // 4-way shoreline overlays (transparent background) for sand next to water
-    function mkShore(dir){ const {c,x}=mkCvs(16,16); x.clearRect(0,0,16,16); x.imageSmoothingEnabled=false; x.fillStyle='#caa96a'; // sand color
-      if(dir==='N'){ x.fillRect(0,0,16,5); x.fillStyle='#b99355'; for(let i=0;i<8;i++) x.fillRect((i*5+1)%16,3,1,1); }
-      if(dir==='S'){ x.fillRect(0,11,16,5); x.fillStyle='#b99355'; for(let i=0;i<8;i++) x.fillRect((i*5+2)%16,12,1,1); }
-      if(dir==='W'){ x.fillRect(0,0,5,16); x.fillStyle='#b99355'; for(let i=0;i<8;i++) x.fillRect(3,(i*5+1)%16,1,1); }
-      if(dir==='E'){ x.fillRect(11,0,5,16); x.fillStyle='#b99355'; for(let i=0;i<8;i++) x.fillRect(12,(i*5+2)%16,1,1); }
-      const img=new Image(); img.src=c.toDataURL('image/png'); return img; }
-    tiles.shoreN = mkShore('N'); tiles.shoreS = mkShore('S'); tiles.shoreW = mkShore('W'); tiles.shoreE = mkShore('E');
     tiles.grass=grass.img; tiles.sand=sand.img; tiles.waterDeep=waterDeep.img; tiles.waterShallow=waterShallow.img; tiles.tree=treeSprite.img; tiles.ready=true;
   }
   genTiles();
@@ -2709,34 +2680,9 @@
     if(STYLE==='pixlake' && tiles.ready){
       for(const t of trees){
         const cx = Math.round(t.x - camera.x), cy = Math.round(t.y - camera.y);
-        const s = 2.8; // visual scale = 70% of previous 4x
-        // contact shadow proportional to scale (rx=6*s, ry=3*s, offset=3*s)
-        ctx.save(); ctx.globalAlpha=0.28; ctx.fillStyle='#000'; ctx.beginPath(); ctx.ellipse(cx, cy + Math.round(3*s), Math.round(6*s), Math.round(3*s), 0, 0, Math.PI*2); ctx.fill(); ctx.restore();
-        // draw scaled tree with bottom-center anchored at (cx,cy)
-        ctx.drawImage(tiles.tree, cx - 8*s, cy - 12*s, 16*s, 16*s);
-        // apple variant: add small red fruits around canopy ring
-        if(t.type==='apple'){
-          function hrand(a,b){ let s = Math.imul(73856093, (a|0)) ^ Math.imul(19349663, (b|0)); s ^= s<<13; s ^= s>>>17; s ^= s<<5; s>>>0; return (s & 0x7fffffff)/0x7fffffff; }
-          const cnt = 3 + ((hrand(t.x*71,t.y*83)*3)|0); // 3..5
-          const baseA = hrand(t.x*91,t.y*47)*Math.PI*2;
-          ctx.fillStyle = '#ef4444';
-          // canopy approximate center in world (sprite anchored at bottom-center)
-          const cxCanopy = cx;
-          const cyCanopy = cy - 6*s; // center a bit更靠上
-          const ringR = 3.9 * s; // move fruits further inward on the canopy
-          // clip fruits within canopy ellipse to guarantee they sit on leaves
-          ctx.save(); ctx.beginPath(); ctx.ellipse(cxCanopy, cyCanopy, 6.2*s, 5.2*s, 0, 0, Math.PI*2); ctx.clip();
-          for(let i=0;i<cnt;i++){
-            const ang = baseA + i*(Math.PI*2/cnt) + (hrand(t.x+i*13,t.y-i*17)-0.5)*0.3;
-            const rx = Math.cos(ang)*ringR; const ry = Math.sin(ang)*ringR*0.7; // slightly less squash
-            const fx = Math.round(cxCanopy + rx) - 2;
-            const fy = Math.round(cyCanopy + ry) - 2;
-            ctx.fillRect(fx, fy, 3, 3);
-            // small pinkish highlight on top-left pixel
-            ctx.fillStyle = '#ffa0a0'; ctx.fillRect(fx, fy, 1, 1); ctx.fillStyle = '#ef4444';
-          }
-          ctx.restore();
-        }
+        // contact shadow
+        ctx.save(); ctx.globalAlpha=0.25; ctx.fillStyle='#000'; ctx.beginPath(); ctx.ellipse(cx, cy+4, 6, 3, 0, 0, Math.PI*2); ctx.fill(); ctx.restore();
+        ctx.drawImage(tiles.tree, cx-8, cy-12, 16, 16);
         if(selectedTreeId === t.id){
           const ax = cx, ay = cy - 20;
           ctx.save(); ctx.fillStyle='#e8ff77'; ctx.strokeStyle='#cbdc5a'; ctx.lineWidth=1.5;
@@ -2909,23 +2855,11 @@
         const e = (0.55*noise(gx*scale1, gy*scale1) + 0.35*noise(gx*scale2, gy*scale2) + 0.1*noise(gx*scale3, gy*scale3) + 2)/4;
         const px = Math.round(x), py = Math.round(y);
         if(STYLE==='pixlake' && tiles.ready){
-          // choose base tile by band: deep/shallow water, sand, grass
-          let isSand=false;
+          // choose tile by band: deep/shallow water, sand, grass
           if(e < WATER_T - 0.04){ ctx.drawImage(tiles.waterDeep, px, py, cell, cell); }
           else if(e < WATER_T){ ctx.drawImage(tiles.waterShallow, px, py, cell, cell); }
-          else if(e < SAND_T){ ctx.drawImage(tiles.sand, px, py, cell, cell); isSand=true; }
+          else if(e < SAND_T){ ctx.drawImage(tiles.sand, px, py, cell, cell); }
           else { ctx.drawImage(tiles.grass, px, py, cell, cell); }
-          // simple 4-way shoreline: overlay sand edge when neighbor is water
-          if(isSand){
-            const eN = (0.55*noise(gx*scale1, (gy-1)*scale1) + 0.35*noise(gx*scale2, (gy-1)*scale2) + 0.1*noise(gx*scale3, (gy-1)*scale3) + 2)/4;
-            const eS = (0.55*noise(gx*scale1, (gy+1)*scale1) + 0.35*noise(gx*scale2, (gy+1)*scale2) + 0.1*noise(gx*scale3, (gy+1)*scale3) + 2)/4;
-            const eW = (0.55*noise((gx-1)*scale1, gy*scale1) + 0.35*noise((gx-1)*scale2, gy*scale2) + 0.1*noise((gx-1)*scale3, gy*scale3) + 2)/4;
-            const eE = (0.55*noise((gx+1)*scale1, gy*scale1) + 0.35*noise((gx+1)*scale2, gy*scale2) + 0.1*noise((gx+1)*scale3, gy*scale3) + 2)/4;
-            if(eN < WATER_T) ctx.drawImage(tiles.shoreN, px, py, cell, cell);
-            if(eS < WATER_T) ctx.drawImage(tiles.shoreS, px, py, cell, cell);
-            if(eW < WATER_T) ctx.drawImage(tiles.shoreW, px, py, cell, cell);
-            if(eE < WATER_T) ctx.drawImage(tiles.shoreE, px, py, cell, cell);
-          }
         } else {
           const color = (e < WATER_T) ? pal.water : (e < SAND_T ? pal.sand : pal.grass);
           ctx.fillStyle = color; ctx.fillRect(px, py, cell, cell);

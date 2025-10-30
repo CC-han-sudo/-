@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Chest Style Studio</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; font-family: ui-sans-serif, system-ui, Segoe UI, Arial; background:#0f1115; color:#e6e6e6; }
+  header { padding: 12px 16px; border-bottom: 1px solid #222; display:flex; align-items:center; gap:12px; }
+  main { display:grid; grid-template-columns: 320px 1fr; gap: 16px; padding: 16px; }
+  section { background:#12141a; border:1px solid #20232a; border-radius: 8px; padding: 12px; }
+  h2 { margin: 0 0 8px; font-size: 16px; font-weight: 600; color: #cbd5e1; }
+  .row { display:flex; align-items:center; gap:8px; margin:6px 0; }
+  label { width: 80px; font-size: 13px; color:#a6adbb; }
+  input[type=color] { appearance: none; border: 1px solid #2a2f3a; background: #0b0e13; width: 36px; height: 24px; padding:0; border-radius:4px; }
+  button { background:#1f2937; color:#e6e6e6; border:1px solid #111827; padding:8px 12px; border-radius:6px; cursor:pointer; }
+  button:hover { background:#263244; }
+  .grid { display:grid; grid-template-columns: repeat(8, minmax(0,1fr)); gap:8px; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; font-size: 12px; }
+  .preview { display:flex; align-items:center; gap:16px; }
+  .card { border:1px solid #1f2430; border-radius:8px; padding:8px; background:#0e1015; }
+</style>
+</head>
+<body>
+  <header>
+    <h1 style="font-size:18px; font-weight:700; margin:0;">Chest Style Studio</h1>
+    <div style="flex:1"></div>
+    <button id="btnRandom">随机</button>
+    <button id="btnReset">重置默认</button>
+    <button id="btnExportPNG">导出 PNG</button>
+    <button id="btnCopyDataURL">复制 DataURL</button>
+  </header>
+  <main>
+    <section>
+      <h2>调色板</h2>
+      <div class="row"><label>框线 K</label><input type="color" id="cK"></div>
+      <div class="row"><label>深棕 D</label><input type="color" id="cD"></div>
+      <div class="row"><label>中棕 M</label><input type="color" id="cM"></div>
+      <div class="row"><label>亮棕 L</label><input type="color" id="cL"></div>
+      <div class="row"><label>金属 G</label><input type="color" id="cG"></div>
+      <div class="row"><label>高光 H</label><input type="color" id="cH"></div>
+      <div class="row"><label>阴影 S</label><input type="color" id="cS"></div>
+      <div class="row"><label>透明 ␠</label><input type="color" id="cSpace"></div>
+      <hr style="border-color:#1d212c; margin:10px 0;"/>
+      <div class="row"><label>放大倍数</label><input type="number" id="scale" min="1" max="16" value="3" style="width:72px; background:#0b0e13; color:#e6e6e6; border:1px solid #2a2f3a; border-radius:4px; padding:4px 6px;"/></div>
+    </section>
+    <section>
+      <h2>预览与导出</h2>
+      <div class="preview">
+        <div class="card">
+          <div style="font-size:12px; color:#a6adbb; margin-bottom:6px;">1x 原图 (16×16)</div>
+          <canvas id="cv1" width="16" height="16" style="image-rendering: pixelated; width:128px; height:128px; background:#0b0e13; border:1px solid #272b36"></canvas>
+        </div>
+        <div class="card">
+          <div style="font-size:12px; color:#a6adbb; margin-bottom:6px;"><span id="lblScale">3x</span> 放大预览</div>
+          <canvas id="cv2" width="48" height="48" style="image-rendering: pixelated; width:144px; height:144px; background:#0b0e13; border:1px solid #272b36"></canvas>
+        </div>
+      </div>
+      <div style="margin-top:12px;">
+        <div class="mono" id="dataUrlBox" style="white-space:nowrap; overflow:auto; border:1px solid #1f2430; padding:6px; border-radius:6px; background:#0b0e13;">DataURL 将显示在此处（点击“复制 DataURL”复制到剪贴板）。</div>
+      </div>
+    </section>
+  </main>
+<script>
+  const GRID = [
+    'KKKKKKKKKKKKKKKK',
+    'KHHLLLLLLLLHHHK',
+    'KHLMMMMMMMMLHHK',
+    'KLMMLLLLLLLMMMK',
+    'KLMMLMMMMMMLMMK',
+    'KLMMLMMMMMMLMMK',
+    'KLMMLMMMMMMLMMK',
+    'KLMMLLLLLLLMMMK',
+    'KDDDMMMMMMMMDDK',
+    'KDDDMMGGGGMMDDK',
+    'KDDDMMGGGGMMDDK',
+    'KDDDMMMMMMMMDDK',
+    'KDDDMMMS SMMDDK',
+    'KDDDG KGGK GDDK',
+    'KDDDGKGGGGK GDK',
+    'KKKKKKKKKKKKKKK'
+  ];
+  const qs = id => document.getElementById(id);
+  const cv1 = qs('cv1'); const ctx1 = cv1.getContext('2d');
+  const cv2 = qs('cv2'); const ctx2 = cv2.getContext('2d');
+  const dataUrlBox = qs('dataUrlBox');
+  const scaleInput = qs('scale'); const lblScale = qs('lblScale');
+  const colorInputs = {
+    K: qs('cK'), D: qs('cD'), M: qs('cM'), L: qs('cL'), G: qs('cG'), H: qs('cH'), S: qs('cS'), ' ': qs('cSpace')
+  };
+  const DEFAULT_PAL = { K:'#3b2f2f', D:'#5a3b2e', M:'#7a4d34', L:'#9b6a46', G:'#c9a227', H:'#e8c58f', S:'#261d1d', ' ':'#00000000' };
+  function setPalette(pal){ for(const k in colorInputs){ colorInputs[k].value = pal[k] || '#000000'; } }
+  function getPalette(){ const pal={}; for(const k in colorInputs){ pal[k] = colorInputs[k].value; } return pal; }
+  function render(){
+    const pal = getPalette();
+    // draw 1x
+    ctx1.clearRect(0,0,cv1.width,cv1.height);
+    for(let y=0;y<GRID.length;y++){
+      for(let x=0;x<GRID[0].length;x++){
+        const ch = GRID[y][x] || ' ';
+        ctx1.fillStyle = pal[ch] || '#ff00ff';
+        ctx1.fillRect(x, y, 1, 1);
+      }
+    }
+    const sc = Math.max(1, Math.min(16, parseInt(scaleInput.value||'3',10)));
+    lblScale.textContent = sc+'x';
+    cv2.width = 16*sc; cv2.height = 16*sc;
+    ctx2.imageSmoothingEnabled = false; ctx2.clearRect(0,0,cv2.width,cv2.height);
+    ctx2.drawImage(cv1, 0,0,16,16, 0,0, cv2.width, cv2.height);
+    // show DataURL
+    const url = cv1.toDataURL('image/png');
+    dataUrlBox.textContent = url;
+  }
+  function randomHex(){ return '#'+Math.floor(Math.random()*0xffffff).toString(16).padStart(6,'0'); }
+  function randomize(){
+    const base = Math.random();
+    // keep K/G/H 为对比明确，其它偏向某色系
+    const hue = Math.floor(base*360);
+    function hsl(h,s,l){ const a=s*Math.min(l,1-l); const f=n=>{const k=(n+h/30)%12; return l-a*Math.max(Math.min(k-3,9-k,1),-1);}; return '#'+[f(0),f(8),f(4)].map(x=>Math.round(x*255).toString(16).padStart(2,'0')).join(''); }
+    const pal = {
+      K: hsl((hue+180)%360,0.35,0.18),
+      D: hsl(hue,0.45,0.25),
+      M: hsl(hue,0.45,0.34),
+      L: hsl(hue,0.45,0.46),
+      G: '#c9a227',
+      H: '#e8c58f',
+      S: hsl((hue+160)%360,0.35,0.12),
+      ' ': '#00000000'
+    };
+    setPalette(pal); render();
+  }
+  // init
+  setPalette(DEFAULT_PAL); render();
+  // events
+  for(const k in colorInputs){ colorInputs[k].addEventListener('input', render); }
+  scaleInput.addEventListener('input', render);
+  qs('btnRandom').addEventListener('click', randomize);
+  qs('btnReset').addEventListener('click', ()=>{ setPalette(DEFAULT_PAL); render(); });
+  qs('btnExportPNG').addEventListener('click', ()=>{
+    const url = cv1.toDataURL('image/png');
+    const a=document.createElement('a'); a.href=url; a.download='chest.png'; a.click();
+  });
+  qs('btnCopyDataURL').addEventListener('click', async ()=>{
+    const url = cv1.toDataURL('image/png');
+    try{ await navigator.clipboard.writeText(url); dataUrlBox.textContent = '已复制到剪贴板：'+url.slice(0,64)+'...'; }
+    catch{ dataUrlBox.textContent = url; }
+  });
+</script>
+</body>
+</html>

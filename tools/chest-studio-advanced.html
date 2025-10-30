@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Chest Style Studio (Advanced)</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin:0; font-family: ui-sans-serif, system-ui, Segoe UI, Arial; background:#0f1115; color:#e6e6e6; }
+  header { padding: 12px 16px; border-bottom: 1px solid #222; display:flex; align-items:center; gap:12px; }
+  main { display:grid; grid-template-columns: 340px 1fr 320px; gap: 16px; padding: 16px; }
+  section { background:#12141a; border:1px solid #20232a; border-radius: 8px; padding: 12px; }
+  h2 { margin: 0 0 8px; font-size: 16px; font-weight: 700; color: #cbd5e1; }
+  .row { display:flex; align-items:center; gap:8px; margin:6px 0; }
+  label { width: 88px; font-size: 13px; color:#a6adbb; }
+  input[type=color] { appearance:none; border:1px solid #2a2f3a; background:#0b0e13; width: 36px; height: 24px; padding:0; border-radius:4px; }
+  button { background:#1f2937; color:#e6e6e6; border:1px solid #111827; padding:8px 12px; border-radius:6px; cursor:pointer; }
+  button:hover { background:#263244; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; font-size: 12px; }
+  .toolbar { display:flex; flex-wrap:wrap; gap:8px; }
+  .chip { padding:6px 10px; background:#1b2230; border:1px solid #0f1520; border-radius:6px; cursor:pointer; }
+  .chip.active { outline:2px solid #2563eb; }
+  canvas { image-rendering: pixelated; background:#0b0e13; border:1px solid #272b36; }
+  small { color:#94a3b8; }
+</style>
+</head>
+<body>
+  <header>
+    <h1 style="font-size:18px; font-weight:800; margin:0;">Chest Style Studio (Advanced)</h1>
+    <div style="flex:1"></div>
+    <button id="btnRandomAll">随机图案+颜色</button>
+    <button id="btnRandomPattern">随机图案</button>
+    <button id="btnRandomColors">随机颜色</button>
+    <button id="btnResetAll">重置默认</button>
+    <button id="btnExportPNG">导出 PNG</button>
+    <button id="btnCopyDataURL">复制 DataURL</button>
+  </header>
+  <main>
+    <section>
+      <h2>调色板</h2>
+      <div class="row"><label>框线 K</label><input type="color" id="cK"></div>
+      <div class="row"><label>深棕 D</label><input type="color" id="cD"></div>
+      <div class="row"><label>中棕 M</label><input type="color" id="cM"></div>
+      <div class="row"><label>亮棕 L</label><input type="color" id="cL"></div>
+      <div class="row"><label>金属 G</label><input type="color" id="cG"></div>
+      <div class="row"><label>高光 H</label><input type="color" id="cH"></div>
+      <div class="row"><label>阴影 S</label><input type="color" id="cS"></div>
+      <div class="row"><label>透明 ␠</label><input type="color" id="cSpace"></div>
+      <hr style="border-color:#1d212c; margin:10px 0;"/>
+      <div class="row"><label>画笔</label>
+        <div class="toolbar" id="brushes"></div>
+      </div>
+      <div class="row"><label>放大倍数</label><input type="number" id="scale" min="1" max="16" value="3" style="width:72px; background:#0b0e13; color:#e6e6e6; border:1px solid #2a2f3a; border-radius:4px; padding:4px 6px;"/></div>
+      <div class="row"><label>对称绘制</label>
+        <div style="display:flex; gap:12px; align-items:center;">
+          <label style="width:auto;"><input type="checkbox" id="symH"> 水平</label>
+          <label style="width:auto;"><input type="checkbox" id="symV"> 垂直</label>
+        </div>
+      </div>
+      <small>提示：按住鼠标左键拖动绘制；右键为透明（␠）。</small>
+    </section>
+
+    <section>
+      <h2>像素编辑 (16×16)</h2>
+      <canvas id="edit" width="256" height="256" style="width:384px; height:384px;"></canvas>
+      <div class="row" style="margin-top:8px;">
+        <button id="btnPresetClassic">经典箱</button>
+        <button id="btnPresetIron">铁箱</button>
+        <button id="btnPresetMoss">苔箱</button>
+        <button id="btnPresetRed">红木箱</button>
+        <button id="btnClear">清空</button>
+      </div>
+    </section>
+
+    <section>
+      <h2>预览与导出</h2>
+      <div class="row"><label>1x 原图</label><canvas id="cv1" width="16" height="16" style="width:160px; height:160px;"></canvas></div>
+      <div class="row"><label id="lblScale">3x 预览</label><canvas id="cv2" width="48" height="48" style="width:160px; height:160px;"></canvas></div>
+      <div class="row"><label>DataURL</label><div class="mono" id="dataUrlBox" style="white-space:nowrap; overflow:auto; border:1px solid #1f2430; padding:6px; border-radius:6px; background:#0b0e13; flex:1;">点击“复制 DataURL”获取</div></div>
+    </section>
+  </main>
+<script>
+  // --- Base grid (classic chest) ---
+  const CLASSIC = [
+    'LLLLLLLLLLLLLLLL',
+    'LLLLLLLLLLLLLLLL',
+    'LMMMMMMMMMMMMMML',
+    'LMMMMMMMMMMMMMML',
+    'LLGGGGGGGGGGGGLL',
+    'LLGGGLLLHHLLGGLL',
+    'LLGGGLLLHHLLGGLL',
+    'LLGGGGGGGGGGGGLL',
+    'LDDDDDDDDDDDDDDL',
+    'LDDDDGGGGGGDDDDL',
+    'LDDDDGGGGGGDDDDL',
+    'LDDDDDDDDDDDDDDL',
+    'LDDDDMMMMMMDDDDL',
+    'LDDDDMMMMMMDDDDL',
+    'LDDDDDDDDDDDDDDL',
+    'LDDDDDDDDDDDDDDL'
+  ];
+  const PRESETS = {
+    classic: { pal:{ K:'#3a1e18', D:'#5b2b21', M:'#7a3a26', L:'#9c5534', G:'#f2c500', H:'#ffe680', S:'#2b140f', ' ':'#00000000' }, grid: CLASSIC },
+    iron:    { pal:{ K:'#1f2937', D:'#374151', M:'#4b5563', L:'#6b7280', G:'#e5e7eb', H:'#9ca3af', S:'#111827', ' ':'#00000000' }, grid: CLASSIC },
+    moss:    { pal:{ K:'#16331f', D:'#1e4b2a', M:'#256338', L:'#2f7a44', G:'#c8dc6b', H:'#e3f2a8', S:'#0b2013', ' ':'#00000000' }, grid: CLASSIC },
+    red:     { pal:{ K:'#3d0f0f', D:'#5c1a12', M:'#7a2318', L:'#9c3a25', G:'#e0b565', H:'#f1d79a', S:'#2a0a0a', ' ':'#00000000' }, grid: CLASSIC },
+  };
+
+  // --- UI refs ---
+  const qs = id=>document.getElementById(id);
+  const edit = qs('edit'); const ectx = edit.getContext('2d');
+  const cv1 = qs('cv1'); const ctx1 = cv1.getContext('2d');
+  const cv2 = qs('cv2'); const ctx2 = cv2.getContext('2d');
+  const lblScale = qs('lblScale');
+  const dataUrlBox = qs('dataUrlBox');
+  const scaleInput = qs('scale');
+  const symH = qs('symH'); const symV = qs('symV');
+  const colorInputs = { K:qs('cK'), D:qs('cD'), M:qs('cM'), L:qs('cL'), G:qs('cG'), H:qs('cH'), S:qs('cS'), ' ':qs('cSpace') };
+  const brushesEl = qs('brushes');
+
+  // --- State ---
+  let GRID = CLASSIC.map(r=>r.padEnd(16,'K').slice(0,16)); // ensure 16 width
+  let PAL = {...PRESETS.classic.pal};
+  let brush = 'K';
+  let painting=false; let right=false;
+
+  function setPalette(p){ PAL={...PAL, ...p}; for(const k in colorInputs){ colorInputs[k].value = PAL[k] || '#00000000'; } renderAll(); }
+  function getPalette(){ const p={}; for(const k in colorInputs){ p[k]=colorInputs[k].value; } return p; }
+
+  function drawGridCanvas(){
+    ectx.imageSmoothingEnabled=false;
+    ectx.clearRect(0,0,edit.width,edit.height);
+    const cell=16; // 16x16 -> 256x256
+    for(let y=0;y<16;y++){
+      for(let x=0;x<16;x++){
+        const ch = GRID[y][x];
+        ectx.fillStyle = PAL[ch] || '#ff00ff';
+        ectx.fillRect(x*cell, y*cell, cell, cell);
+        // grid lines
+        ectx.strokeStyle='rgba(255,255,255,0.06)';
+        ectx.strokeRect(x*cell+0.5, y*cell+0.5, cell-1, cell-1);
+      }
+    }
+  }
+
+  function drawPreviews(){
+    // 1x
+    ctx1.clearRect(0,0,16,16);
+    for(let y=0;y<16;y++){
+      for(let x=0;x<16;x++){
+        const ch = GRID[y][x];
+        ctx1.fillStyle = PAL[ch] || '#ff00ff';
+        ctx1.fillRect(x, y, 1, 1);
+      }
+    }
+    const sc = Math.max(1, Math.min(16, parseInt(scaleInput.value||'3',10)));
+    lblScale.textContent = sc+'x 预览';
+    cv2.width = 16*sc; cv2.height = 16*sc;
+    ctx2.imageSmoothingEnabled=false; ctx2.clearRect(0,0,cv2.width,cv2.height);
+    ctx2.drawImage(cv1, 0,0,16,16, 0,0, cv2.width, cv2.height);
+    dataUrlBox.textContent = cv1.toDataURL('image/png');
+  }
+
+  function renderAll(){ drawGridCanvas(); drawPreviews(); }
+
+  function setBrush(b){ brush=b; [...brushesEl.children].forEach(el=>el.classList.toggle('active', el.dataset.b===brush)); }
+
+  function buildBrushes(){
+    const keys = Object.keys(PAL);
+    brushesEl.innerHTML='';
+    keys.forEach(k=>{
+      const b=document.createElement('button'); b.className='chip'; b.dataset.b=k; b.textContent = (k===' ' ? '␠' : k);
+      b.style.borderColor = '#111827'; b.style.background = '#141821';
+      const sw=document.createElement('span'); sw.style.display='inline-block'; sw.style.width='12px'; sw.style.height='12px'; sw.style.marginLeft='6px'; sw.style.verticalAlign='middle'; sw.style.background = PAL[k] || '#000'; sw.style.border='1px solid #3337'; sw.style.borderRadius='2px';
+      b.appendChild(sw);
+      b.addEventListener('click', ()=> setBrush(k));
+      brushesEl.appendChild(b);
+    });
+    setBrush('K');
+  }
+
+  function applyPreset(key){ const p=PRESETS[key]; PAL={...p.pal}; GRID=p.grid.map(r=>r); for(const k in colorInputs){ colorInputs[k].value = PAL[k] || '#00000000'; } buildBrushes(); renderAll(); }
+
+  // painting handlers
+  function put(x,y,b){ if(x<0||x>=16||y<0||y>=16) return; let ch=b; if(right) ch=' '; GRID[y] = GRID[y].substring(0,x) + ch + GRID[y].substring(x+1); }
+  function onDraw(evt){ const rect=edit.getBoundingClientRect(); const cx=evt.clientX-rect.left, cy=evt.clientY-rect.top; const cell=16; const x=Math.floor(cx/cell), y=Math.floor(cy/cell); if(!painting) return; put(x,y,brush); if(symH.checked) put(15-x,y,brush); if(symV.checked) put(x,15-y,brush); if(symH.checked&&symV.checked) put(15-x,15-y,brush); renderAll(); }
+
+  edit.addEventListener('mousedown', e=>{ painting=true; right=(e.button===2); onDraw(e); });
+  edit.addEventListener('mousemove', onDraw);
+  edit.addEventListener('mouseup',   ()=> painting=false);
+  edit.addEventListener('mouseleave',()=> painting=false);
+  edit.addEventListener('contextmenu', e=>{ e.preventDefault(); });
+
+  // random helpers
+  function rand(n){ return Math.floor(Math.random()*n); }
+  function randomHue(){ return Math.floor(Math.random()*360); }
+  function hsl(h,s,l){ const a=s*Math.min(l,1-l); const f=n=>{const k=(n+h/30)%12; return l-a*Math.max(Math.min(k-3,9-k,1),-1);}; return '#'+[f(0),f(8),f(4)].map(x=>Math.round(x*255).toString(16).padStart(2,'0')).join(''); }
+
+  function randomColors(){
+    const hue = randomHue();
+    PAL.K = hsl((hue+180)%360,0.35,0.18);
+    PAL.D = hsl(hue,0.45,0.25);
+    PAL.M = hsl(hue,0.45,0.34);
+    PAL.L = hsl(hue,0.45,0.46);
+    PAL.G = '#c9a227';
+    PAL.H = '#e8c58f';
+    PAL.S = hsl((hue+160)%360,0.35,0.12);
+    PAL[' '] = '#00000000';
+    for(const k in colorInputs) colorInputs[k].value = PAL[k] || '#00000000';
+  }
+
+  function randomPattern(){
+    // Start from base
+    GRID = CLASSIC.map(r=>r);
+    // Add random rivets / handle accents / stripes
+    const choices = ['G','H','D','M','L'];
+    // random corner rivets
+    [[1,1],[14,1],[1,14],[14,14]].forEach(([x,y])=>{ if(Math.random()<0.8) GRID[y] = GRID[y].substring(0,x)+ 'G' + GRID[y].substring(x+1); });
+    // random vertical bands
+    for(let x=2;x<14;x+=rand(4)+3){ for(let y=3;y<13;y++){ if(Math.random()<0.3){ const ch=choices[rand(choices.length)]; GRID[y] = GRID[y].substring(0,x)+ ch + GRID[y].substring(x+1); } } }
+    // random center emblem
+    const cx=8, cy=9; const emblem = [['M','H','M'],['H','G','H'],['M','H','M']];
+    if(Math.random()<0.7){ for(let dy=0;dy<3;dy++){ for(let dx=0;dx<3;dx++){ const x=cx-1+dx,y=cy-1+dy; const ch=emblem[dy][dx]; GRID[y] = GRID[y].substring(0,x)+ ch + GRID[y].substring(x+1); } } }
+  }
+
+  function render(){ drawGridCanvas(); }
+
+  // wiring
+  document.getElementById('btnRandomAll').addEventListener('click', ()=>{ randomColors(); randomPattern(); renderAll(); });
+  document.getElementById('btnRandomPattern').addEventListener('click', ()=>{ randomPattern(); renderAll(); });
+  document.getElementById('btnRandomColors').addEventListener('click', ()=>{ randomColors(); renderAll(); });
+  document.getElementById('btnResetAll').addEventListener('click', ()=>{ applyPreset('classic'); });
+  document.getElementById('btnExportPNG').addEventListener('click', ()=>{ const url=cv1.toDataURL('image/png'); const a=document.createElement('a'); a.href=url; a.download='chest.png'; a.click(); });
+  document.getElementById('btnCopyDataURL').addEventListener('click', async ()=>{ const url=cv1.toDataURL('image/png'); try{ await navigator.clipboard.writeText(url); dataUrlBox.textContent='已复制到剪贴板：'+url.slice(0,64)+'...'; }catch{ dataUrlBox.textContent=url; } });
+  for(const k in colorInputs){ colorInputs[k].addEventListener('input', ()=>{ PAL[k]=colorInputs[k].value; renderAll(); }); }
+  scaleInput.addEventListener('input', ()=>{ renderAll(); });
+  document.getElementById('btnPresetClassic').addEventListener('click', ()=> applyPreset('classic'));
+  document.getElementById('btnPresetIron').addEventListener('click', ()=> applyPreset('iron'));
+  document.getElementById('btnPresetMoss').addEventListener('click', ()=> applyPreset('moss'));
+  document.getElementById('btnPresetRed').addEventListener('click', ()=> applyPreset('red'));
+  document.getElementById('btnClear').addEventListener('click', ()=>{ GRID = Array.from({length:16},()=> ' '.repeat(16)); renderAll(); });
+
+  // init
+  function initBrushUI(){ brushesEl.innerHTML=''; for(const k of Object.keys(PAL)){ const b=document.createElement('button'); b.className='chip'; b.dataset.b=k; b.textContent=(k===' ' ? '␠' : k); const sw=document.createElement('span'); sw.style.display='inline-block'; sw.style.width='12px'; sw.style.height='12px'; sw.style.marginLeft='6px'; sw.style.verticalAlign='middle'; sw.style.background=PAL[k]; sw.style.border='1px solid #3337'; sw.style.borderRadius='2px'; b.appendChild(sw); b.addEventListener('click', ()=> setBrush(k)); brushesEl.appendChild(b);} setBrush('K'); }
+  applyPreset('classic'); initBrushUI(); renderAll();
+</script>
+</body>
+</html>
