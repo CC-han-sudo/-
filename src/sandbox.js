@@ -1,10 +1,34 @@
+// ==========================================
+// SANDBOX GAME - MAIN FILE
+// ==========================================
+// 一个16x16像素风格的沙盒生存游戏
+// 包含：资源采集、合成、建造、战斗等系统
+// ==========================================
+
+// ES6 模块导入
+// import { UI_CONFIG, COMBAT_CONFIG, ORE_CONFIG, GATHERING_CONFIG, HINTS } from './config.js';
+// 注释掉导入，因为config.js中的配置目前仅作参考
+// 实际使用时取消注释并替换代码中的硬编码值
+
 (()=>{
+  // ==========================================
+  // SECTION 1: 初始化与配置
+  // ==========================================
+  
   const canvas = document.getElementById('game');
   const ctx = canvas.getContext('2d');
   // Pixel-art style switch (phase 1): 'classic' | 'pixlake'
   const STYLE = 'pixlake';
   // chest sprite (single embedded pixel art)
   const chestImg = new Image(); let chestImgReady=false;
+  // cow sprites (two frames for running animation)
+  const cowImg1 = new Image(); let cowImg1Ready=false;
+  const cowImg2 = new Image(); let cowImg2Ready=false;
+  cowImg1.onload = () => { cowImg1Ready = true; };
+  cowImg2.onload = () => { cowImg2Ready = true; };
+  cowImg1.src = '素材/mow1.png';
+  cowImg2.src = '素材/mow2.png';
+  const cowImgReady = () => cowImg1Ready && cowImg2Ready; // 两张都加载完成才算ready
   (function buildChestSprite(){
     // Warm browns + bright gold to match reference
     const PAL = { K:'#3a1e18', D:'#5b2b21', M:'#7a3a26', L:'#9c5534', G:'#f2c500', H:'#ffe680', S:'#2b140f', ' ':'#00000000' };
@@ -78,6 +102,25 @@
       x.fillStyle=COL.trunk; x.fillRect(7,10,2,5); x.fillStyle=COL.trunkHi; x.fillRect(7,11,1,3);
       x.fillStyle=COL.trunk; x.fillRect(6,15,4,1);
       treeSprite.img=new Image(); treeSprite.img.src=c.toDataURL('image/png'); }
+    // Rock sprite (16x16) - Gravel/rubble style (bottom half only)
+    const rockSprite={};{ const {c,x}=mkCvs(16,16);
+      x.clearRect(0,0,16,16); x.imageSmoothingEnabled=false;
+      // Grey stone palette
+      const ROCK={ dark:'#4a4a52', mid:'#6b6b73', lite:'#8a8a94', hi:'#a5a5b0' };
+      // Large stone piece (bottom-left)
+      x.fillStyle = ROCK.mid;
+      x.fillRect(1,8,6,5); x.fillRect(2,7,3,1); x.fillRect(0,9,1,3);
+      x.fillStyle = ROCK.hi; x.fillRect(2,8,3,1); x.fillRect(3,9,2,1);
+      x.fillStyle = ROCK.dark; x.fillRect(1,12,5,1); x.fillRect(6,11,1,2);
+      // Medium stone piece (bottom-right)
+      x.fillStyle = ROCK.mid;
+      x.fillRect(9,9,5,5); x.fillRect(10,8,3,1); x.fillRect(8,10,1,3);
+      x.fillStyle = ROCK.hi; x.fillRect(10,9,2,1); x.fillRect(11,10,1,1);
+      x.fillStyle = ROCK.dark; x.fillRect(9,13,4,1); x.fillRect(13,12,1,1);
+      // Small scattered piece in middle
+      x.fillStyle = ROCK.lite;
+      x.fillRect(7,10,2,2);
+      rockSprite.img=new Image(); rockSprite.img.src=c.toDataURL('image/png'); }
     // 4-way shoreline overlays (transparent background) for sand next to water
     function mkShore(dir){ const {c,x}=mkCvs(16,16); x.clearRect(0,0,16,16); x.imageSmoothingEnabled=false; x.fillStyle='#caa96a'; // sand color
       if(dir==='N'){ x.fillRect(0,0,16,5); x.fillStyle='#b99355'; for(let i=0;i<8;i++) x.fillRect((i*5+1)%16,3,1,1); }
@@ -86,7 +129,40 @@
       if(dir==='E'){ x.fillRect(11,0,5,16); x.fillStyle='#b99355'; for(let i=0;i<8;i++) x.fillRect(12,(i*5+2)%16,1,1); }
       const img=new Image(); img.src=c.toDataURL('image/png'); return img; }
     tiles.shoreN = mkShore('N'); tiles.shoreS = mkShore('S'); tiles.shoreW = mkShore('W'); tiles.shoreE = mkShore('E');
-    tiles.grass=grass.img; tiles.sand=sand.img; tiles.waterDeep=waterDeep.img; tiles.waterShallow=waterShallow.img; tiles.tree=treeSprite.img; tiles.ready=true;
+    tiles.grass=grass.img; tiles.sand=sand.img; tiles.waterDeep=waterDeep.img; tiles.waterShallow=waterShallow.img; tiles.tree=treeSprite.img; tiles.rock=rockSprite.img;
+    // Ore sprites (7 types: copper, tin, iron, silver, gold, darkGold, diamond)
+    const ORE_COLORS = {
+      copper: '#d97706',   // orange-brown
+      tin: '#94a3b8',      // grey-blue  
+      iron: '#78716c',     // brown-grey
+      silver: '#e5e7eb',   // light grey
+      gold: '#fbbf24',     // yellow
+      darkGold: '#a16207', // dark gold
+      diamond: '#06b6d4'   // cyan
+    };
+    tiles.ores = {};
+    for(const [oreName, oreColor] of Object.entries(ORE_COLORS)){
+      const oreSprite={}; const {c:oc,x:ox}=mkCvs(16,16);
+      ox.clearRect(0,0,16,16); ox.imageSmoothingEnabled=false;
+      // Draw base rock (same as rockSprite) - redefine ROCK palette
+      const ROCK={ dark:'#4a4a52', mid:'#6b6b73', lite:'#8a8a94', hi:'#a5a5b0' };
+      ox.fillStyle = ROCK.mid;
+      ox.fillRect(1,8,6,5); ox.fillRect(2,7,3,1); ox.fillRect(0,9,1,3);
+      ox.fillStyle = ROCK.hi; ox.fillRect(2,8,3,1); ox.fillRect(3,9,2,1);
+      ox.fillStyle = ROCK.dark; ox.fillRect(1,12,5,1); ox.fillRect(6,11,1,2);
+      ox.fillStyle = ROCK.mid;
+      ox.fillRect(9,9,5,5); ox.fillRect(10,8,3,1); ox.fillRect(8,10,1,3);
+      ox.fillStyle = ROCK.hi; ox.fillRect(10,9,2,1); ox.fillRect(11,10,1,1);
+      ox.fillStyle = ROCK.dark; ox.fillRect(9,13,4,1); ox.fillRect(13,12,1,1);
+      ox.fillStyle = ROCK.lite; ox.fillRect(7,10,2,2);
+      // Add colored ore dots
+      ox.fillStyle = oreColor;
+      ox.fillRect(3,10,1,1); ox.fillRect(4,11,1,1); ox.fillRect(2,11,1,1);
+      ox.fillRect(11,11,1,1); ox.fillRect(12,10,1,1); ox.fillRect(10,12,1,1);
+      oreSprite.img=new Image(); oreSprite.img.src=oc.toDataURL('image/png');
+      tiles.ores[oreName] = oreSprite.img;
+    }
+    tiles.ready=true;
   }
   genTiles();
   const seedView = document.getElementById('seedView');
@@ -100,6 +176,10 @@
   function fit(){ canvas.width = window.innerWidth; canvas.height = window.innerHeight; ctx.imageSmoothingEnabled = false; }
   window.addEventListener('resize', fit); fit();
 
+  // ==========================================
+  // SECTION 2: 世界与相机
+  // ==========================================
+  
   // Camera and world
   const camera = { x:0, y:0, z:1 };
 
@@ -113,6 +193,38 @@
     };
   }
 
+  // ==========================================
+  // SECTION 3: UI 渲染函数
+  // ==========================================
+  
+  // -------------------- 工具函数 --------------------
+  /**
+   * 绘制矿石图标（灰色石头底座 + 3个彩色点）
+   * @param {CanvasRenderingContext2D} ctx - 画布上下文
+   * @param {number} x - X坐标
+   * @param {number} y - Y坐标
+   * @param {string} color - 矿石颜色（十六进制）
+   */
+  function drawOreIcon(ctx, x, y, color) {
+    ctx.fillStyle = '#6b6b73'; ctx.fillRect(x, y, 16, 16);
+    ctx.fillStyle = color;
+    ctx.fillRect(x + 4, y + 4, 4, 4);
+    ctx.fillRect(x + 10, y + 6, 4, 4);
+    ctx.fillRect(x + 2, y + 10, 4, 4);
+  }
+  
+  // 矿石配置
+  const ORE_COLORS = {
+    copper: '#d97706',
+    tin: '#94a3b8',
+    iron: '#78716c',
+    silver: '#e5e7eb',
+    gold: '#fbbf24',
+    darkGold: '#a16207',
+    diamond: '#06b6d4'
+  };
+  
+  // -------------------- 箱子 UI --------------------
   function drawChestUI(){
     if(!chestOpen || !currentChest) return;
     const w = 600, h = 460;
@@ -128,12 +240,23 @@
     const rawEntries=[
       ...(inventory.gem>0? [{type:'gem', label:`宝石: ${inventory.gem}`}] : []),
       ...(inventory.wood>0? [{type:'wood', label:`木材: ${inventory.wood}`}] : []),
+      ...(inventory.stone>0? [{type:'stone', label:`石块: ${inventory.stone}`}] : []),
       ...(inventory.plank>0? [{type:'plank', label:`木板: ${inventory.plank}`}] : []),
       ...(inventory.stick>0? [{type:'stick', label:`木棍: ${inventory.stick}`}] : []),
       ...(inventory.workbench>0? [{type:'workbench', label:`工作台: ${inventory.workbench}`}] : []),
       ...(inventory.chest>0? [{type:'chest', label:`箱子: ${inventory.chest}`}] : []),
       ...(inventory.bow>0? [{type:'bow', label:`弓: ${inventory.bow}${player.equipped==='bow'?' (已装备)':''}`}] : []),
+      ...(inventory.pickaxe>0? [{type:'pickaxe', label:`石镐: ${inventory.pickaxe}${player.equipped==='pickaxe'?' (已装备)':''}`}] : []),
+      ...(inventory.stoneAxe>0? [{type:'stoneAxe', label:`石斧: ${inventory.stoneAxe}${player.equipped==='stoneAxe'?' (已装备)':''}`}] : []),
+      ...(inventory.stoneSword>0? [{type:'stoneSword', label:`石剑: ${inventory.stoneSword}${player.equipped==='stoneSword'?' (已装备)':''}`}] : []),
       ...(inventory.apple>0? [{type:'apple', label:`苹果: ${inventory.apple}`}] : []),
+      ...(inventory.copper>0? [{type:'copper', label:`铜矿: ${inventory.copper}`}] : []),
+      ...(inventory.tin>0? [{type:'tin', label:`锡矿: ${inventory.tin}`}] : []),
+      ...(inventory.iron>0? [{type:'iron', label:`铁矿: ${inventory.iron}`}] : []),
+      ...(inventory.silver>0? [{type:'silver', label:`银矿: ${inventory.silver}`}] : []),
+      ...(inventory.gold>0? [{type:'gold', label:`金矿: ${inventory.gold}`}] : []),
+      ...(inventory.darkGold>0? [{type:'darkGold', label:`黑金矿: ${inventory.darkGold}`}] : []),
+      ...(inventory.diamond>0? [{type:'diamond', label:`钻石: ${inventory.diamond}`}] : []),
     ];
     ctx.fillStyle='#e6e6e6'; ctx.font='16px Segoe UI, Microsoft YaHei';
     const listViewportH = 200;
@@ -151,6 +274,8 @@
         ctx.fillStyle='#f5e663'; ctx.beginPath(); ctx.moveTo(listX+8, curY+8); ctx.lineTo(listX, curY+20); ctx.lineTo(listX+8, curY+32); ctx.lineTo(listX+16, curY+20); ctx.closePath(); ctx.fill();
       } else if(ent.type==='wood'){
         ctx.fillStyle='#8b5a2b'; ctx.fillRect(listX, curY+10, 20, 10); ctx.fillStyle='#a87945'; ctx.fillRect(listX, curY+14, 20, 4);
+      } else if(ent.type==='stone'){
+        ctx.fillStyle='#6b6b73'; ctx.fillRect(listX+2, curY+10, 16, 14); ctx.fillStyle='#8a8a94'; ctx.fillRect(listX+3, curY+11, 10, 8); ctx.fillStyle='#4a4a52'; ctx.fillRect(listX+8, curY+16, 8, 6);
       } else if(ent.type==='plank'){
         ctx.fillStyle='#e0d4a3'; ctx.fillRect(listX, curY+10, 20, 10); ctx.fillStyle='#b9a77c'; ctx.fillRect(listX, curY+14, 20, 4);
       } else if(ent.type==='stick'){
@@ -162,6 +287,14 @@
         else { ctx.fillStyle='#a16207'; ctx.fillRect(listX, curY+10, 20, 10); ctx.strokeStyle='#713f12'; ctx.strokeRect(listX+0.5, curY+10.5, 20-1, 10-1); }
       } else if(ent.type==='bow'){
         ctx.strokeStyle='#c89f6a'; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(listX+10, curY+15, 8, -Math.PI/2, Math.PI/2); ctx.stroke(); ctx.strokeStyle='#ddd'; ctx.beginPath(); ctx.moveTo(listX+10, curY+7); ctx.lineTo(listX+10, curY+23); ctx.stroke();
+      } else if(ent.type==='pickaxe'){
+        ctx.fillStyle='#78716c'; ctx.fillRect(listX+8, curY+8, 4, 12); ctx.fillStyle='#6b6b73'; ctx.fillRect(listX+6, curY+10, 8, 4);
+      } else if(ent.type==='stoneAxe'){
+        ctx.fillStyle='#78716c'; ctx.fillRect(listX+8, curY+8, 4, 12); ctx.fillStyle='#6b6b73'; ctx.fillRect(listX+4, curY+10, 10, 6);
+      } else if(ent.type==='stoneSword'){
+        ctx.fillStyle='#6b6b73'; ctx.fillRect(listX+9, curY+8, 2, 14); ctx.fillStyle='#78716c'; ctx.fillRect(listX+7, curY+20, 6, 4);
+      } else if(ORE_COLORS[ent.type]){
+        drawOreIcon(ctx, listX+2, curY+10, ORE_COLORS[ent.type]);
       }
       ctx.fillStyle='#e6e6e6'; ctx.fillText(ent.label, listX+32, curY+6);
       listBounds.push({type: ent.type, x:listX, y:curY, w:220, h:rowH});
@@ -197,6 +330,8 @@
             ctx.fillStyle='#f5e663'; ctx.beginPath(); ctx.moveTo(sx+cell/2, sy+cell/2-10); ctx.lineTo(sx+cell/2-8, sy+cell/2); ctx.lineTo(sx+cell/2, sy+cell/2+10); ctx.lineTo(sx+cell/2+8, sy+cell/2); ctx.closePath(); ctx.fill();
           } else if(it.type==='wood'){
             ctx.fillStyle='#8b5a2b'; ctx.fillRect(sx+cell/2-14, sy+cell/2-6, 28, 12); ctx.fillStyle='#a87945'; ctx.fillRect(sx+cell/2-14, sy+cell/2-1, 28, 3);
+          } else if(it.type==='stone'){
+            ctx.fillStyle='#6b6b73'; ctx.fillRect(sx+cell/2-12, sy+cell/2-10, 24, 20); ctx.fillStyle='#8a8a94'; ctx.fillRect(sx+cell/2-10, sy+cell/2-8, 16, 12); ctx.fillStyle='#4a4a52'; ctx.fillRect(sx+cell/2-4, sy+cell/2+2, 12, 8);
           } else if(it.type==='plank'){
             ctx.fillStyle='#e0d4a3'; ctx.fillRect(sx+cell/2-16, sy+cell/2-8, 32, 16); ctx.fillStyle='#b9a77c'; ctx.fillRect(sx+cell/2-16, sy+cell/2-2, 32, 4);
           } else if(it.type==='stick'){
@@ -298,11 +433,11 @@
   
   function clearInventory(){
     if(!inventory) return;
-    inventory.gem=0; inventory.wood=0; inventory.plank=0; inventory.stick=0; inventory.workbench=0; inventory.bow=0; inventory.apple=0; inventory.chest=0;
+    inventory.gem=0; inventory.wood=0; inventory.plank=0; inventory.stick=0; inventory.workbench=0; inventory.bow=0; inventory.apple=0; inventory.chest=0; inventory.stone=0; inventory.stoneAxe=0; inventory.stoneWall=0; inventory.stoneSword=0; inventory.furnace=0; inventory.pickaxe=0; inventory.copper=0; inventory.tin=0; inventory.iron=0; inventory.silver=0; inventory.gold=0; inventory.darkGold=0; inventory.diamond=0;
   }
   function resetInventoryToStarter(){
     if(!inventory) return;
-    inventory.gem=8; inventory.wood=8; inventory.plank=8; inventory.stick=8; inventory.workbench=8; inventory.bow=8; inventory.apple=8; inventory.chest=8;
+    inventory.gem=16; inventory.wood=16; inventory.plank=16; inventory.stick=16; inventory.workbench=16; inventory.bow=16; inventory.apple=16; inventory.chest=16; inventory.stone=16; inventory.stoneAxe=16; inventory.stoneWall=16; inventory.stoneSword=16; inventory.furnace=16; inventory.pickaxe=16; inventory.copper=16; inventory.tin=16; inventory.iron=16; inventory.silver=16; inventory.gold=16; inventory.darkGold=16; inventory.diamond=16;
   }
 
 
@@ -334,7 +469,8 @@
       if(Math.abs(da) <= MELEE.half){
         // damage (armor/shield aware)
         const hadShield = (e.shield||0) > 0;
-        const applied = applyEnemyDamage(e, MELEE.dmg);
+        const meleeDmg = (player.equipped==='stoneSword' ? MELEE.dmg * 2 : MELEE.dmg); // Stone sword 2x damage
+        const applied = applyEnemyDamage(e, meleeDmg);
         e.showHpUntil = performance.now() + 800; if(!e.attack){ e.state='patrol'; e.patrolSince=performance.now(); } sfxHit();
         if(applied>0){
           // particles: white if shield active, else stronger red burst
@@ -387,6 +523,7 @@
     ctx.restore();
   }
 
+  // -------------------- 工作台 UI --------------------
   function drawWorkbenchUI(){
     if(!benchOpen || !currentBench) return;
     const w = 560, h = 360;
@@ -402,12 +539,23 @@
     const rawEntries=[
       ...(inventory.gem>0? [{type:'gem', label:`宝石: ${inventory.gem}`}] : []),
       ...(inventory.wood>0? [{type:'wood', label:`木材: ${inventory.wood}`}] : []),
+      ...(inventory.stone>0? [{type:'stone', label:`石块: ${inventory.stone}`}] : []),
       ...(inventory.plank>0? [{type:'plank', label:`木板: ${inventory.plank}`}] : []),
       ...(inventory.stick>0? [{type:'stick', label:`木棍: ${inventory.stick}`}] : []),
       ...(inventory.workbench>0? [{type:'workbench', label:`工作台: ${inventory.workbench}`}] : []),
       ...(inventory.chest>0? [{type:'chest', label:`箱子: ${inventory.chest}`}] : []),
       ...(inventory.bow>0? [{type:'bow', label:`弓: ${inventory.bow}${player.equipped==='bow'?' (已装备)':''}`}] : []),
+      ...(inventory.pickaxe>0? [{type:'pickaxe', label:`石镐: ${inventory.pickaxe}${player.equipped==='pickaxe'?' (已装备)':''}`}] : []),
+      ...(inventory.stoneAxe>0? [{type:'stoneAxe', label:`石斧: ${inventory.stoneAxe}${player.equipped==='stoneAxe'?' (已装备)':''}`}] : []),
+      ...(inventory.stoneSword>0? [{type:'stoneSword', label:`石剑: ${inventory.stoneSword}${player.equipped==='stoneSword'?' (已装备)':''}`}] : []),
       ...(inventory.apple>0? [{type:'apple', label:`苹果: ${inventory.apple}`}] : []),
+      ...(inventory.copper>0? [{type:'copper', label:`铜矿: ${inventory.copper}`}] : []),
+      ...(inventory.tin>0? [{type:'tin', label:`锡矿: ${inventory.tin}`}] : []),
+      ...(inventory.iron>0? [{type:'iron', label:`铁矿: ${inventory.iron}`}] : []),
+      ...(inventory.silver>0? [{type:'silver', label:`银矿: ${inventory.silver}`}] : []),
+      ...(inventory.gold>0? [{type:'gold', label:`金矿: ${inventory.gold}`}] : []),
+      ...(inventory.darkGold>0? [{type:'darkGold', label:`黑金矿: ${inventory.darkGold}`}] : []),
+      ...(inventory.diamond>0? [{type:'diamond', label:`钻石: ${inventory.diamond}`}] : []),
     ];
     ctx.fillStyle='#e6e6e6'; ctx.font='16px Segoe UI, Microsoft YaHei';
     // Match backpack viewport height (200)
@@ -430,6 +578,8 @@
         ctx.fillStyle='#f5e663'; ctx.beginPath(); ctx.moveTo(listX+8, curY+8); ctx.lineTo(listX, curY+20); ctx.lineTo(listX+8, curY+32); ctx.lineTo(listX+16, curY+20); ctx.closePath(); ctx.fill();
       } else if(ent.type==='wood'){
         ctx.fillStyle='#8b5a2b'; ctx.fillRect(listX, curY+10, 20, 10); ctx.fillStyle='#a87945'; ctx.fillRect(listX, curY+14, 20, 4);
+      } else if(ent.type==='stone'){
+        ctx.fillStyle='#6b6b73'; ctx.fillRect(listX+2, curY+10, 16, 14); ctx.fillStyle='#8a8a94'; ctx.fillRect(listX+3, curY+11, 10, 8); ctx.fillStyle='#4a4a52'; ctx.fillRect(listX+8, curY+16, 8, 6);
       } else if(ent.type==='plank'){
         ctx.fillStyle='#e0d4a3'; ctx.fillRect(listX, curY+10, 20, 10); ctx.fillStyle='#b9a77c'; ctx.fillRect(listX, curY+14, 20, 4);
       } else if(ent.type==='stick'){
@@ -443,17 +593,28 @@
         // simple bow icon
         ctx.strokeStyle='#c89f6a'; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(listX+10, curY+15, 8, -Math.PI/2, Math.PI/2); ctx.stroke();
         ctx.strokeStyle='#ddd'; ctx.beginPath(); ctx.moveTo(listX+10, curY+7); ctx.lineTo(listX+10, curY+23); ctx.stroke();
+      } else if(ent.type==='pickaxe'){
+        ctx.fillStyle='#78716c'; ctx.fillRect(listX+8, curY+8, 4, 12); ctx.fillStyle='#6b6b73'; ctx.fillRect(listX+6, curY+10, 8, 4);
+      } else if(ent.type==='stoneAxe'){
+        ctx.fillStyle='#78716c'; ctx.fillRect(listX+8, curY+8, 4, 12); ctx.fillStyle='#6b6b73'; ctx.fillRect(listX+4, curY+10, 10, 6);
+      } else if(ent.type==='stoneSword'){
+        ctx.fillStyle='#6b6b73'; ctx.fillRect(listX+9, curY+8, 2, 14); ctx.fillStyle='#78716c'; ctx.fillRect(listX+7, curY+20, 6, 4);
+      } else if(ORE_COLORS[ent.type]){
+        drawOreIcon(ctx, listX+2, curY+10, ORE_COLORS[ent.type]);
       }
       ctx.fillStyle='#e6e6e6'; ctx.fillText(ent.label, listX+32, curY+6);
       listBounds.push({type: ent.type, x:listX, y:curY, w:220, h:rowH});
       // draw per-item primary button（与背包一致，仅对有意义的类型显示）
-      if(ent.type===backpackSelectedType && (ent.type==='plank'||ent.type==='workbench'||ent.type==='chest'||ent.type==='bow'||ent.type==='apple')){
+      if(ent.type===backpackSelectedType && (ent.type==='plank'||ent.type==='workbench'||ent.type==='chest'||ent.type==='bow'||ent.type==='pickaxe'||ent.type==='stoneAxe'||ent.type==='stoneSword'||ent.type==='apple')){
         const fontPrev = ctx.font; // restore later to avoid text shrinking
         // primary button
         let primaryLabel = '使用';
         if(ent.type==='workbench') primaryLabel='放置';
         if(ent.type==='chest') primaryLabel='放置';
         else if(ent.type==='bow') primaryLabel=(player.equipped==='bow'?'卸下':'使用');
+        else if(ent.type==='pickaxe') primaryLabel=(player.equipped==='pickaxe'?'卸下':'使用');
+        else if(ent.type==='stoneAxe') primaryLabel=(player.equipped==='stoneAxe'?'卸下':'使用');
+        else if(ent.type==='stoneSword') primaryLabel=(player.equipped==='stoneSword'?'卸下':'使用');
         else if(ent.type==='apple') primaryLabel='食用';
         const btnW1=56; const uy = curY + 6; const ux = listX + 220 - 6 - btnW1;
         ctx.fillStyle='#2e7d32'; ctx.fillRect(ux, uy, btnW1, 24);
@@ -499,6 +660,8 @@
             ctx.fillStyle='#f5e663'; ctx.beginPath(); ctx.moveTo(sx+cellSz/2, sy+cellSz/2-10); ctx.lineTo(sx+cellSz/2-8, sy+cellSz/2); ctx.lineTo(sx+cellSz/2, sy+cellSz/2+10); ctx.lineTo(sx+cellSz/2+8, sy+cellSz/2); ctx.closePath(); ctx.fill();
           } else if(it.type==='wood'){
             ctx.fillStyle='#8b5a2b'; ctx.fillRect(sx+cellSz/2-14, sy+cellSz/2-6, 28, 12); ctx.fillStyle='#a87945'; ctx.fillRect(sx+cellSz/2-14, sy+cellSz/2-1, 28, 3);
+          } else if(it.type==='stone'){
+            ctx.fillStyle='#6b6b73'; ctx.fillRect(sx+cellSz/2-12, sy+cellSz/2-10, 24, 20); ctx.fillStyle='#8a8a94'; ctx.fillRect(sx+cellSz/2-10, sy+cellSz/2-8, 16, 12); ctx.fillStyle='#4a4a52'; ctx.fillRect(sx+cellSz/2-4, sy+cellSz/2+2, 12, 8);
           } else if(it.type==='plank'){
             ctx.fillStyle='#e0d4a3'; ctx.fillRect(sx+cellSz/2-16, sy+cellSz/2-8, 32, 16); ctx.fillStyle='#b9a77c'; ctx.fillRect(sx+cellSz/2-16, sy+cellSz/2-2, 32, 4);
           } else if(it.type==='stick'){
@@ -532,17 +695,39 @@
 
   // Determine bench recipe from 3x3 slots. Very simple sample rules.
   function benchGetRecipe(slots){
-    const cnt={wood:0, plank:0, stick:0}; const idxs={wood:[], plank:[], stick:[]};
+    const cnt={wood:0, plank:0, stick:0, stone:0}; const idxs={wood:[], plank:[], stick:[], stone:[]};
     for(let i=0;i<slots.length;i++){ const it=slots[i]; if(!it) continue; if(cnt[it.type]!=null){ cnt[it.type]++; idxs[it.type].push(i); } }
-    // Check for 2x2 plank square anywhere (workbench合成：4木板→工作台)
+    // Check for 2x2 plank square anywhere (workbench)
     const twoByTwoSets = [ [0,1,3,4],[1,2,4,5],[3,4,6,7],[4,5,7,8] ];
     for(const set of twoByTwoSets){ if(set.every(i=>slots[i]?.type==='plank')){
       return { label:'工作台 ×1', make:()=>{ inventory.workbench=(inventory.workbench||0)+1; }, take:[...set] };
     }}
-    // 8 planks around center (index 4 empty) → chest ×1
+    // 8 planks around center (index 4 empty) -> chest
     const ring = [0,1,2,3,5,6,7,8];
     if(ring.every(i=>slots[i]?.type==='plank') && !slots[4]){
       return { label:'箱子 ×1', make:()=>{ inventory.chest=(inventory.chest||0)+1; }, take:[...ring] };
+    }
+    // 8 stones around center -> furnace
+    if(ring.every(i=>slots[i]?.type==='stone') && !slots[4]){
+      return { label:'熔炉 ×1', make:()=>{ inventory.furnace=(inventory.furnace||0)+1; }, take:[...ring] };
+    }
+    // 4 stones -> stone wall
+    if(cnt.stone>=4){
+      for(const set of twoByTwoSets){ if(set.every(i=>slots[i]?.type==='stone')){
+        return { label:'石墙 ×1', make:()=>{ inventory.stoneWall=(inventory.stoneWall||0)+1; }, take:[...set] };
+      }}
+    }
+    // Pickaxe: 2 sticks + 3 stones
+    if(cnt.stick>=2 && cnt.stone>=3){
+      return { label:'石镐 ×1', make:()=>{ inventory.pickaxe=(inventory.pickaxe||0)+1; }, take:[...idxs.stick.slice(0,2), ...idxs.stone.slice(0,3)] };
+    }
+    // Stone axe: 2 sticks + 2 stones (stick on top)
+    if(cnt.stick>=2 && cnt.stone>=2){
+      return { label:'石斧 ×1', make:()=>{ inventory.stoneAxe=(inventory.stoneAxe||0)+1; }, take:[...idxs.stick.slice(0,2), ...idxs.stone.slice(0,2)] };
+    }
+    // Stone sword: 1 stick + 2 stones
+    if(cnt.stick>=1 && cnt.stone>=2){
+      return { label:'石剑 ×1', make:()=>{ inventory.stoneSword=(inventory.stoneSword||0)+1; }, take:[...idxs.stick.slice(0,1), ...idxs.stone.slice(0,2)] };
     }
     // Priority: bow (3 sticks) > sticks (2 planks) > plank (2 wood)
     if(cnt.stick>=3){ return { label:'弓 ×1', make:()=>{ inventory.bow=(inventory.bow||0)+1; }, take:[...idxs.stick.slice(0,3)] }; }
@@ -646,13 +831,16 @@
     const sx = snapCenterX(wp.x), sy = snapCenterY(wp.y);
     const tooClosePlayer = Math.hypot(sx - player.x, sy - player.y) <= (cell/2 + 12);
     // use a slightly smaller radius for overlap test so neighboring cells are allowed
-    const valid = !tooClosePlayer && !isWaterArea(sx, sy, cell*0.4) && !collidesTree(sx, sy, 10) && !collidesWall(sx, sy, Math.max(1, cell/2 - 2));
+    const valid = !tooClosePlayer && !isWaterArea(sx, sy, cell*0.4) && !collidesTree(sx, sy, 10) && !collidesRock(sx, sy, 10) && !collidesOre(sx, sy, 10) && !collidesWall(sx, sy, Math.max(1, cell/2 - 2));
     const cx = Math.round(sx - camera.x), cy = Math.round(sy - camera.y);
     const size = cell; // align to grid cell size
     ctx.save();
     ctx.globalAlpha = 0.5;
     if(placeMode.type==='wall'){
       ctx.fillStyle = valid ? '#6ee7b7' : '#f87171';
+      ctx.fillRect(cx - size/2, cy - size/2, size, size);
+    } else if(placeMode.type==='stoneWall'){
+      ctx.fillStyle = valid ? '#94a3b8' : '#f87171';
       ctx.fillRect(cx - size/2, cy - size/2, size, size);
     } else if(placeMode.type==='bench'){
       ctx.fillStyle = valid ? '#a7b0c0' : '#f87171';
@@ -672,17 +860,438 @@
     for(const w of walls){
       const cx = Math.round(w.x - camera.x), cy = Math.round(w.y - camera.y);
       const sz = w.r*2;
-      ctx.fillStyle = '#7a5a3a';
-      ctx.fillRect(cx - w.r, cy - w.r, sz, sz);
-      ctx.strokeStyle = '#4e3623'; ctx.lineWidth = 2; ctx.strokeRect(cx - w.r + 0.5, cy - w.r + 0.5, sz-1, sz-1);
-      // optional small HP indicator
+      // 区分木墙和石墙
+      if(w.type === 'stone'){
+        ctx.fillStyle = '#6b6b73'; // 灰色石墙
+        ctx.fillRect(cx - w.r, cy - w.r, sz, sz);
+        ctx.fillStyle = '#8a8a94'; // 高光
+        ctx.fillRect(cx - w.r + 2, cy - w.r + 2, sz - 4, sz/2 - 2);
+        ctx.strokeStyle = '#4a4a52'; ctx.lineWidth = 2; ctx.strokeRect(cx - w.r + 0.5, cy - w.r + 0.5, sz-1, sz-1);
+      } else {
+        ctx.fillStyle = '#7a5a3a'; // 棕色木墙
+        ctx.fillRect(cx - w.r, cy - w.r, sz, sz);
+        ctx.strokeStyle = '#4e3623'; ctx.lineWidth = 2; ctx.strokeRect(cx - w.r + 0.5, cy - w.r + 0.5, sz-1, sz-1);
+      }
+      // HP指示器
       const hp = (w.hp!=null? w.hp : 60), hpMax=(w.hpMax||60); if(hp<hpMax){
         ctx.fillStyle='#000'; ctx.fillRect(cx-14, cy - w.r - 8, 28, 3);
         ctx.fillStyle='#f87171'; ctx.fillRect(cx-14, cy - w.r - 8, 28*(hp/hpMax), 3);
       }
     }
   }
+  
+  function drawDungeonEntrances(){
+    if(inDungeon) return; // 在地下城中不显示入口
+    for(const entrance of dungeonEntrances){
+      const cx = Math.round(entrance.x - camera.x);
+      const cy = Math.round(entrance.y - camera.y);
+      
+      ctx.save();
+      
+      // 洞穴入口尺寸
+      const caveWidth = 64;
+      const caveHeight = 56;
+      const frameThickness = 8;
+      
+      // 1. 绘制外部岩石轮廓（背景山体）
+      const rockColor = '#6b5842';
+      const rockDark = '#4a3828';
+      const rockLight = '#8b7355';
+      
+      // 左侧岩石
+      ctx.fillStyle = rockColor;
+      ctx.beginPath();
+      ctx.moveTo(cx - caveWidth/2 - 20, cy + caveHeight/2);
+      ctx.lineTo(cx - caveWidth/2 - 16, cy - caveHeight/2 - 10);
+      ctx.lineTo(cx - caveWidth/2 - 8, cy - caveHeight/2 - 8);
+      ctx.lineTo(cx - caveWidth/2, cy + caveHeight/2);
+      ctx.closePath();
+      ctx.fill();
+      
+      // 右侧岩石
+      ctx.fillStyle = rockColor;
+      ctx.beginPath();
+      ctx.moveTo(cx + caveWidth/2, cy + caveHeight/2);
+      ctx.lineTo(cx + caveWidth/2 + 8, cy - caveHeight/2 - 8);
+      ctx.lineTo(cx + caveWidth/2 + 16, cy - caveHeight/2 - 10);
+      ctx.lineTo(cx + caveWidth/2 + 20, cy + caveHeight/2);
+      ctx.closePath();
+      ctx.fill();
+      
+      // 岩石阴影细节
+      ctx.fillStyle = rockDark;
+      ctx.fillRect(cx - caveWidth/2 - 18, cy, 4, caveHeight/2);
+      ctx.fillRect(cx + caveWidth/2 + 14, cy, 4, caveHeight/2);
+      
+      // 2. 绘制黑色洞穴内部（梯形，有深度感）
+      ctx.fillStyle = '#000000';
+      ctx.beginPath();
+      ctx.moveTo(cx - caveWidth/2 + 6, cy - caveHeight/2); // 左上
+      ctx.lineTo(cx + caveWidth/2 - 6, cy - caveHeight/2); // 右上
+      ctx.lineTo(cx + caveWidth/2 + 2, cy + caveHeight/2); // 右下
+      ctx.lineTo(cx - caveWidth/2 - 2, cy + caveHeight/2); // 左下
+      ctx.closePath();
+      ctx.fill();
+      
+      // 内部阴影渐变
+      const gradient = ctx.createRadialGradient(cx, cy + 10, 6, cx, cy + 10, caveWidth/2);
+      gradient.addColorStop(0, '#000000');
+      gradient.addColorStop(0.5, '#0a0a0a');
+      gradient.addColorStop(1, '#1a1410');
+      ctx.fillStyle = gradient;
+      ctx.beginPath();
+      ctx.moveTo(cx - caveWidth/2 + 6, cy - caveHeight/2);
+      ctx.lineTo(cx + caveWidth/2 - 6, cy - caveHeight/2);
+      ctx.lineTo(cx + caveWidth/2 + 2, cy + caveHeight/2);
+      ctx.lineTo(cx - caveWidth/2 - 2, cy + caveHeight/2);
+      ctx.closePath();
+      ctx.fill();
+      
+      // 3. 绘制木质门框
+      const woodColor = '#9b7e52';
+      const woodDark = '#6b5435';
+      const woodLight = '#c4a86e';
+      
+      // 左侧木板（多层次）
+      ctx.fillStyle = woodColor;
+      ctx.fillRect(cx - caveWidth/2 - frameThickness, cy - caveHeight/2 - 6, frameThickness, caveHeight + 12);
+      ctx.fillStyle = woodLight;
+      ctx.fillRect(cx - caveWidth/2 - frameThickness + 1, cy - caveHeight/2 - 6, 3, caveHeight + 12);
+      ctx.fillStyle = woodDark;
+      ctx.fillRect(cx - caveWidth/2 - 2, cy - caveHeight/2 - 6, 2, caveHeight + 12);
+      
+      // 右侧木板
+      ctx.fillStyle = woodColor;
+      ctx.fillRect(cx + caveWidth/2, cy - caveHeight/2 - 6, frameThickness, caveHeight + 12);
+      ctx.fillStyle = woodLight;
+      ctx.fillRect(cx + caveWidth/2 + 1, cy - caveHeight/2 - 6, 3, caveHeight + 12);
+      ctx.fillStyle = woodDark;
+      ctx.fillRect(cx + caveWidth/2 + frameThickness - 2, cy - caveHeight/2 - 6, 2, caveHeight + 12);
+      
+      // 顶部横梁（带厚度）
+      ctx.fillStyle = woodColor;
+      ctx.fillRect(cx - caveWidth/2 - frameThickness, cy - caveHeight/2 - 6, caveWidth + frameThickness * 2, 8);
+      ctx.fillStyle = woodLight;
+      ctx.fillRect(cx - caveWidth/2 - frameThickness, cy - caveHeight/2 - 6, caveWidth + frameThickness * 2, 3);
+      ctx.fillStyle = woodDark;
+      ctx.fillRect(cx - caveWidth/2 - frameThickness, cy - caveHeight/2 + 2, caveWidth + frameThickness * 2, 2);
+      
+      // 4. 木板纹理（更密集）
+      ctx.strokeStyle = woodDark;
+      ctx.lineWidth = 1;
+      for(let i = 0; i < 4; i++){
+        ctx.beginPath();
+        ctx.moveTo(cx - caveWidth/2 - frameThickness + 2 + i * 2, cy - caveHeight/2 - 6);
+        ctx.lineTo(cx - caveWidth/2 - frameThickness + 2 + i * 2, cy + caveHeight/2 + 6);
+        ctx.stroke();
+      }
+      for(let i = 0; i < 4; i++){
+        ctx.beginPath();
+        ctx.moveTo(cx + caveWidth/2 + 2 + i * 2, cy - caveHeight/2 - 6);
+        ctx.lineTo(cx + caveWidth/2 + 2 + i * 2, cy + caveHeight/2 + 6);
+        ctx.stroke();
+      }
+      
+      // 横向木纹（横梁）
+      for(let i = 0; i < 2; i++){
+        ctx.beginPath();
+        ctx.moveTo(cx - caveWidth/2 - frameThickness, cy - caveHeight/2 - 3 + i * 3);
+        ctx.lineTo(cx + caveWidth/2 + frameThickness, cy - caveHeight/2 - 3 + i * 3);
+        ctx.stroke();
+      }
+      
+      // 5. 木板边缘和钉子
+      ctx.strokeStyle = '#3a2415';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(cx - caveWidth/2 - frameThickness, cy - caveHeight/2 - 6, frameThickness, caveHeight + 12);
+      ctx.strokeRect(cx + caveWidth/2, cy - caveHeight/2 - 6, frameThickness, caveHeight + 12);
+      ctx.strokeRect(cx - caveWidth/2 - frameThickness, cy - caveHeight/2 - 6, caveWidth + frameThickness * 2, 8);
+      
+      // 木钉（更多，更明显）
+      ctx.fillStyle = '#2a1810';
+      const nailSize = 3;
+      // 左侧
+      ctx.fillRect(cx - caveWidth/2 - frameThickness + 2, cy - caveHeight/2 + 2, nailSize, nailSize);
+      ctx.fillRect(cx - caveWidth/2 - frameThickness + 2, cy, nailSize, nailSize);
+      ctx.fillRect(cx - caveWidth/2 - frameThickness + 2, cy + caveHeight/2 - 6, nailSize, nailSize);
+      // 右侧
+      ctx.fillRect(cx + caveWidth/2 + frameThickness - 5, cy - caveHeight/2 + 2, nailSize, nailSize);
+      ctx.fillRect(cx + caveWidth/2 + frameThickness - 5, cy, nailSize, nailSize);
+      ctx.fillRect(cx + caveWidth/2 + frameThickness - 5, cy + caveHeight/2 - 6, nailSize, nailSize);
+      // 横梁
+      ctx.fillRect(cx - caveWidth/2, cy - caveHeight/2 - 3, nailSize, nailSize);
+      ctx.fillRect(cx, cy - caveHeight/2 - 3, nailSize, nailSize);
+      ctx.fillRect(cx + caveWidth/2 - 3, cy - caveHeight/2 - 3, nailSize, nailSize);
+      
+      // 6. 地面装饰（碎石）
+      ctx.fillStyle = '#5a4a3a';
+      ctx.fillRect(cx - caveWidth/2 - 8, cy + caveHeight/2, 4, 3);
+      ctx.fillRect(cx - caveWidth/2 + 4, cy + caveHeight/2, 3, 2);
+      ctx.fillRect(cx + caveWidth/2 + 4, cy + caveHeight/2, 4, 3);
+      ctx.fillRect(cx + caveWidth/2 - 8, cy + caveHeight/2, 3, 2);
+      
+      ctx.restore();
+      
+      // 如果玩家靠近，显示提示
+      const dist = Math.hypot(player.x - entrance.x, player.y - entrance.y);
+      if(dist < 50){
+        ctx.save();
+        ctx.fillStyle = 'rgba(0,0,0,0.85)';
+        ctx.fillRect(cx - 50, cy - caveHeight/2 - 32, 100, 24);
+        ctx.strokeStyle = '#9b7e52';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(cx - 50, cy - caveHeight/2 - 32, 100, 24);
+        ctx.fillStyle = '#ffd700';
+        ctx.font = 'bold 13px Segoe UI, Microsoft YaHei';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('按 E 进入地下城', cx, cy - caveHeight/2 - 20);
+        ctx.restore();
+      }
+    }
+  }
+  
+  function drawDungeon(){
+    if(!inDungeon || !currentDungeonId) return;
+    const dungeon = dungeons.get(currentDungeonId);
+    if(!dungeon) return;
+    
+    // 绘制深色背景（完全黑暗）
+    ctx.fillStyle = '#050505';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    
+    ctx.save();
+    
+    // 绘制房间地板
+    for(const room of dungeon.rooms){
+      const rx = Math.round(room.x - camera.x);
+      const ry = Math.round(room.y - camera.y);
+      const hw = room.w / 2;
+      const hh = room.h / 2;
+      
+      // 地板（石质纹理）
+      ctx.fillStyle = '#3a3532';
+      ctx.fillRect(rx - hw, ry - hh, room.w, room.h);
+      
+      // 地板纹理（简单格子）
+      ctx.strokeStyle = '#2a2520';
+      ctx.lineWidth = 1;
+      for(let i = -hw; i <= hw; i += 32){
+        ctx.beginPath();
+        ctx.moveTo(rx + i, ry - hh);
+        ctx.lineTo(rx + i, ry + hh);
+        ctx.stroke();
+      }
+      for(let j = -hh; j <= hh; j += 32){
+        ctx.beginPath();
+        ctx.moveTo(rx - hw, ry + j);
+        ctx.lineTo(rx + hw, ry + j);
+        ctx.stroke();
+      }
+    }
+    
+    // 绘制走廊地板
+    for(const corridor of dungeon.corridors){
+      const cx = Math.round(corridor.x - camera.x);
+      const cy = Math.round(corridor.y - camera.y);
+      const hw = corridor.w / 2;
+      const hh = corridor.h / 2;
+      
+      ctx.fillStyle = '#3a3532';
+      ctx.fillRect(cx - hw, cy - hh, corridor.w, corridor.h);
+      
+      // 走廊纹理
+      if(corridor.dir === 'horizontal'){
+        ctx.strokeStyle = '#2a2520';
+        ctx.lineWidth = 1;
+        for(let i = -hw; i <= hw; i += 32){
+          ctx.beginPath();
+          ctx.moveTo(cx + i, cy - hh);
+          ctx.lineTo(cx + i, cy + hh);
+          ctx.stroke();
+        }
+      } else {
+        for(let j = -hh; j <= hh; j += 32){
+          ctx.beginPath();
+          ctx.moveTo(cx - hw, cy + j);
+          ctx.lineTo(cx + hw, cy + j);
+          ctx.stroke();
+        }
+      }
+    }
+    
+    // 绘制墙壁
+    for(const wall of dungeon.walls){
+      const wx = Math.round(wall.x - camera.x);
+      const wy = Math.round(wall.y - camera.y);
+      const hw = wall.w / 2;
+      const hh = wall.h / 2;
+      
+      // 墙壁主体（深灰石砖）
+      ctx.fillStyle = '#52514e';
+      ctx.fillRect(wx - hw, wy - hh, wall.w, wall.h);
+      
+      // 墙壁高光
+      ctx.fillStyle = '#6a6864';
+      ctx.fillRect(wx - hw + 2, wy - hh + 2, wall.w - 4, wall.h / 2 - 2);
+      
+      // 墙壁边框
+      ctx.strokeStyle = '#3a3937';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(wx - hw, wy - hh, wall.w, wall.h);
+    }
+    
+    // 绘制门
+    for(let i = 0; i < dungeon.doors.length; i++){
+      const door = dungeon.doors[i];
+      const dx = Math.round(door.x - camera.x);
+      const dy = Math.round(door.y - camera.y);
+      const hw = door.w / 2;
+      const hh = door.h / 2;
+      
+      if(door.open){
+        // 打开的门（显示地板）
+        ctx.fillStyle = '#3a3532';
+        ctx.fillRect(dx - hw, dy - hh, door.w, door.h);
+      } else {
+        // 关闭的门（木质）
+        ctx.fillStyle = '#8b6914';
+        ctx.fillRect(dx - hw, dy - hh, door.w, door.h);
+        
+        // 门板纹理
+        if(door.dir === 'horizontal'){
+          ctx.strokeStyle = '#6b5010';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(dx - hw + 4, dy - hh);
+          ctx.lineTo(dx - hw + 4, dy + hh);
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.moveTo(dx + hw - 4, dy - hh);
+          ctx.lineTo(dx + hw - 4, dy + hh);
+          ctx.stroke();
+        } else {
+          ctx.strokeStyle = '#6b5010';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(dx - hw, dy - hh + 4);
+          ctx.lineTo(dx + hw, dy - hh + 4);
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.moveTo(dx - hw, dy + hh - 4);
+          ctx.lineTo(dx + hw, dy + hh - 4);
+          ctx.stroke();
+        }
+        
+        // 门框
+        ctx.strokeStyle = '#4a3510';
+        ctx.lineWidth = 3;
+        ctx.strokeRect(dx - hw, dy - hh, door.w, door.h);
+        
+        // 门把手
+        ctx.fillStyle = '#e5c07b';
+        if(door.dir === 'horizontal'){
+          ctx.fillRect(dx + hw - 8, dy - 3, 4, 6);
+        } else {
+          ctx.fillRect(dx - 3, dy + hh - 8, 6, 4);
+        }
+      }
+      
+      // 如果玩家靠近门，显示提示
+      const dist = Math.hypot(player.x - door.x, player.y - door.y);
+      if(dist < 35){
+        ctx.save();
+        ctx.fillStyle = 'rgba(0,0,0,0.8)';
+        const tw = door.open ? 60 : 70;
+        ctx.fillRect(dx - tw/2, dy - 30, tw, 20);
+        ctx.fillStyle = '#e6e6e6';
+        ctx.font = '11px Segoe UI, Microsoft YaHei';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(door.open ? '按 E 关门' : '按 E 开门', dx, dy - 20);
+        ctx.restore();
+        door._nearPlayer = true;
+        door._index = i;
+      } else {
+        door._nearPlayer = false;
+      }
+    }
+    
+    // 绘制宝箱
+    for(const chest of dungeon.chests){
+      const cx = Math.round(chest.x - camera.x);
+      const cy = Math.round(chest.y - camera.y);
+      if(chest.opened){
+        ctx.fillStyle = '#78716c';
+        ctx.fillRect(cx - 12, cy - 10, 24, 20);
+        ctx.strokeStyle = '#52525b';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(cx - 12, cy - 10, 24, 20);
+      } else {
+        if(chestImgReady){
+          ctx.drawImage(chestImg, cx - 12, cy - 10, 24, 18);
+        } else {
+          ctx.fillStyle = '#f59e0b';
+          ctx.fillRect(cx - 12, cy - 10, 24, 20);
+          ctx.strokeStyle = '#d97706';
+          ctx.lineWidth = 2;
+          ctx.strokeRect(cx - 12, cy - 10, 24, 20);
+        }
+        const glowAlpha = 0.3 + 0.2 * Math.sin(performance.now() / 300);
+        ctx.save();
+        ctx.globalAlpha = glowAlpha;
+        ctx.fillStyle = '#fbbf24';
+        ctx.beginPath();
+        ctx.arc(cx, cy, 20, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+      const dist = Math.hypot(player.x - chest.x, player.y - chest.y);
+      if(dist < 40 && !chest.opened){
+        ctx.save();
+        ctx.fillStyle = 'rgba(0,0,0,0.8)';
+        ctx.fillRect(cx - 35, cy - 35, 70, 22);
+        ctx.fillStyle = '#fbbf24';
+        ctx.font = '11px Segoe UI, Microsoft YaHei';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('点击打开宝箱', cx, cy - 24);
+        ctx.restore();
+      }
+    }
+    
+    // 绘制出口
+    const ex = Math.round(dungeon.exitPoint.x - camera.x);
+    const ey = Math.round(dungeon.exitPoint.y - camera.y);
+    ctx.save();
+    ctx.fillStyle = '#6b6b73';
+    ctx.fillRect(ex - 20, ey - 15, 40, 30);
+    ctx.fillStyle = '#8a8a94';
+    for(let i = 0; i < 4; i++){
+      ctx.fillRect(ex - 15 + i * 8, ey - 10 + i * 5, 30 - i * 6, 4);
+    }
+    ctx.strokeStyle = '#4a4a52';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(ex - 20, ey - 15, 40, 30);
+    ctx.restore();
+    
+    const exitDist = Math.hypot(player.x - dungeon.exitPoint.x, player.y - dungeon.exitPoint.y);
+    if(exitDist < 50){
+      ctx.save();
+      ctx.fillStyle = 'rgba(0,0,0,0.8)';
+      ctx.fillRect(ex - 45, ey - 45, 90, 24);
+      ctx.fillStyle = '#e6e6e6';
+      ctx.font = '12px Segoe UI, Microsoft YaHei';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('按 E 返回地表', ex, ey - 33);
+      ctx.restore();
+    }
+    
+    ctx.restore();
+  }
 
+  // -------------------- 背包 UI --------------------
   function drawBackpack(){
     if(!backpackOpen) return;
     const w = 520, h = 320; // doubled size
@@ -747,12 +1356,23 @@
     const entries = [];
     if(inventory.gem>0) entries.push({type:'gem', label:`宝石: ${inventory.gem}`});
     if(inventory.wood>0) entries.push({type:'wood', label:`木材: ${inventory.wood}`});
+    if(inventory.stone>0) entries.push({type:'stone', label:`石块: ${inventory.stone}`});
     if(inventory.plank>0) entries.push({type:'plank', label:`木板: ${inventory.plank}`});
     if(inventory.stick>0) entries.push({type:'stick', label:`木棍: ${inventory.stick}`});
     if(inventory.workbench>0) entries.push({type:'workbench', label:`工作台: ${inventory.workbench}`});
     if(inventory.chest>0) entries.push({type:'chest', label:`箱子: ${inventory.chest}`});
     if(inventory.bow>0) entries.push({type:'bow', label:`弓: ${inventory.bow}${player.equipped==='bow'?' (已装备)':''}`});
+    if(inventory.pickaxe>0) entries.push({type:'pickaxe', label:`石镐: ${inventory.pickaxe}${player.equipped==='pickaxe'?' (已装备)':''}`});
+    if(inventory.stoneAxe>0) entries.push({type:'stoneAxe', label:`石斧: ${inventory.stoneAxe}${player.equipped==='stoneAxe'?' (已装备)':''}`});
+    if(inventory.stoneSword>0) entries.push({type:'stoneSword', label:`石剑: ${inventory.stoneSword}${player.equipped==='stoneSword'?' (已装备)':''}`});
     if(inventory.apple>0) entries.push({type:'apple', label:`苹果: ${inventory.apple}`});
+    if(inventory.copper>0) entries.push({type:'copper', label:`铜矿: ${inventory.copper}`});
+    if(inventory.tin>0) entries.push({type:'tin', label:`锡矿: ${inventory.tin}`});
+    if(inventory.iron>0) entries.push({type:'iron', label:`铁矿: ${inventory.iron}`});
+    if(inventory.silver>0) entries.push({type:'silver', label:`银矿: ${inventory.silver}`});
+    if(inventory.gold>0) entries.push({type:'gold', label:`金矿: ${inventory.gold}`});
+    if(inventory.darkGold>0) entries.push({type:'darkGold', label:`黑金矿: ${inventory.darkGold}`});
+    if(inventory.diamond>0) entries.push({type:'diamond', label:`钻石: ${inventory.diamond}`});
     ctx.fillStyle='#e6e6e6'; ctx.font='16px Segoe UI, Microsoft YaHei';
     // scrolling math and clip viewport
     const totalH = entries.length * rowH;
@@ -761,6 +1381,7 @@
     ctx.save(); ctx.beginPath(); ctx.rect(listX-4, listY-4, 260, listViewportH+8); ctx.clip();
     let curY = listY - backpackScroll;
     const listBounds = [];
+    const backpackPrimaryBtns = [];
     for(const ent of entries){
       const rowTop = curY, rowBottom = curY + rowH;
       const visible = rowBottom >= listY && rowTop <= listY + listViewportH;
@@ -769,6 +1390,8 @@
           ctx.fillStyle='#f5e663'; ctx.beginPath(); ctx.moveTo(listX+8, curY+8); ctx.lineTo(listX, curY+20); ctx.lineTo(listX+8, curY+32); ctx.lineTo(listX+16, curY+20); ctx.closePath(); ctx.fill();
         } else if(ent.type==='wood'){
           ctx.fillStyle='#8b5a2b'; ctx.fillRect(listX, curY+10, 20, 10); ctx.fillStyle='#a87945'; ctx.fillRect(listX, curY+14, 20, 4);
+        } else if(ent.type==='stone'){
+          ctx.fillStyle='#6b6b73'; ctx.fillRect(listX+2, curY+10, 16, 14); ctx.fillStyle='#8a8a94'; ctx.fillRect(listX+3, curY+11, 10, 8); ctx.fillStyle='#4a4a52'; ctx.fillRect(listX+8, curY+16, 8, 6);
         } else if(ent.type==='plank'){
           ctx.fillStyle='#e0d4a3'; ctx.fillRect(listX, curY+10, 20, 10); ctx.fillStyle='#b9a77c'; ctx.fillRect(listX, curY+14, 20, 4);
         } else if(ent.type==='stick'){
@@ -781,12 +1404,35 @@
         } else if(ent.type==='bow'){
           ctx.strokeStyle='#c89f6a'; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(listX+10, curY+15, 8, -Math.PI/2, Math.PI/2); ctx.stroke();
           ctx.strokeStyle='#ddd'; ctx.beginPath(); ctx.moveTo(listX+10, curY+7); ctx.lineTo(listX+10, curY+23); ctx.stroke();
+        } else if(ent.type==='pickaxe'){
+          ctx.fillStyle='#78716c'; ctx.fillRect(listX+8, curY+8, 4, 12); ctx.fillStyle='#6b6b73'; ctx.fillRect(listX+6, curY+10, 8, 4);
+        } else if(ent.type==='stoneAxe'){
+          ctx.fillStyle='#78716c'; ctx.fillRect(listX+8, curY+8, 4, 12); ctx.fillStyle='#6b6b73'; ctx.fillRect(listX+4, curY+10, 10, 6);
+        } else if(ent.type==='stoneSword'){
+          ctx.fillStyle='#6b6b73'; ctx.fillRect(listX+9, curY+8, 2, 14); ctx.fillStyle='#78716c'; ctx.fillRect(listX+7, curY+20, 6, 4);
         } else if(ent.type==='apple'){
           ctx.fillStyle='#ef4444'; ctx.beginPath(); ctx.arc(listX+10, curY+16, 7, 0, Math.PI*2); ctx.fill();
           ctx.fillStyle='#14532d'; ctx.fillRect(listX+8, curY+8, 3, 4);
+        } else if(ORE_COLORS[ent.type]){
+          drawOreIcon(ctx, listX+2, curY+10, ORE_COLORS[ent.type]);
         }
         ctx.fillStyle='#e6e6e6'; ctx.fillText(ent.label, listX+32, curY+6);
         listBounds.push({type: ent.type, x:listX, y:curY, w:220, h:rowH});
+        // Add primary buttons for various item types
+        if(ent.type===backpackSelectedType && (ent.type==='plank'||ent.type==='workbench'||ent.type==='chest'||ent.type==='apple'||ent.type==='bow'||ent.type==='pickaxe'||ent.type==='stoneAxe'||ent.type==='stoneSword'||ent.type==='stoneWall')){
+          const fontPrev = ctx.font;
+          let primaryLabel = '使用';
+          if(ent.type==='plank'||ent.type==='workbench'||ent.type==='chest'||ent.type==='stoneWall') primaryLabel='放置';
+          else if(ent.type==='apple') primaryLabel='食用';
+          else if(ent.type==='bow'||ent.type==='pickaxe'||ent.type==='stoneAxe'||ent.type==='stoneSword') primaryLabel=(player.equipped===ent.type?'卸下':'使用');
+          const btnW1=56; const uy = curY + 6; const ux = listX + 220 - 6 - btnW1;
+          ctx.fillStyle='#2e7d32'; ctx.fillRect(ux, uy, btnW1, 24);
+          ctx.strokeStyle='#1b5e20'; ctx.strokeRect(ux+0.5, uy+0.5, btnW1-1, 24-1);
+          ctx.fillStyle='#e6e6e6'; ctx.font='14px Segoe UI, Microsoft YaHei'; ctx.textAlign='center'; ctx.textBaseline='middle';
+          ctx.fillText(primaryLabel, ux+btnW1/2, uy+12);
+          backpackPrimaryBtns.push({ x:ux, y:uy, w:btnW1, h:24, type: ent.type });
+          ctx.font = fontPrev; ctx.textAlign='left'; ctx.textBaseline='top';
+        }
         if(ent.type===backpackSelectedType){
           ctx.save();
           ctx.globalAlpha=0.18; ctx.fillStyle='#e5f3ff'; ctx.fillRect(listX-2, curY+2, 224, rowH-4);
@@ -816,7 +1462,7 @@
     const gridW = gridCols*cell + (gridCols-1)*gap, gridH = gridRows*cell + (gridRows-1)*gap;
     const gridX = x + w - gridW - 24, gridY = y + 56;
     backpackLayout = { x: x, y: y, w: w, h: h, list: listBounds, slots: [], craftBtn: null, scroll: backpackScroll, maxScroll: maxScroll,
-      scrollbar: { x: trackX, y: trackY, w: trackW, h: trackH, thumbY: thumbY, thumbH: thumbH }, sideBtns
+      scrollbar: { x: trackX, y: trackY, w: trackW, h: trackH, thumbY: thumbY, thumbH: thumbH }, sideBtns, primaryBtns: backpackPrimaryBtns
     };
     ctx.strokeStyle='#888'; ctx.lineWidth=2;
     for(let r=0;r<gridRows;r++){
@@ -833,6 +1479,8 @@
           } else if(it.type==='wood'){
             ctx.fillStyle='#8b5a2b'; ctx.fillRect(sx+cell/2-14, sy+cell/2-6, 28, 12);
             ctx.fillStyle='#a87945'; ctx.fillRect(sx+cell/2-14, sy+cell/2-1, 28, 3);
+          } else if(it.type==='stone'){
+            ctx.fillStyle='#6b6b73'; ctx.fillRect(sx+cell/2-12, sy+cell/2-10, 24, 20); ctx.fillStyle='#8a8a94'; ctx.fillRect(sx+cell/2-10, sy+cell/2-8, 16, 12); ctx.fillStyle='#4a4a52'; ctx.fillRect(sx+cell/2-4, sy+cell/2+2, 12, 8);
           } else if(it.type==='plank'){
             ctx.fillStyle='#e0d4a3'; ctx.fillRect(sx+cell/2-16, sy+cell/2-8, 32, 16);
             ctx.fillStyle='#b9a77c'; ctx.fillRect(sx+cell/2-16, sy+cell/2-2, 32, 4);
@@ -965,6 +1613,8 @@
         ctx.fillStyle='#f5e663'; ctx.beginPath(); ctx.moveTo(mx, my-10); ctx.lineTo(mx-10, my); ctx.lineTo(mx, my+10); ctx.lineTo(mx+10, my); ctx.closePath(); ctx.fill();
       }else if(dragItem.type==='wood'){
         ctx.fillStyle='#8b5a2b'; ctx.fillRect(mx-12, my-6, 24, 12); ctx.fillStyle='#a87945'; ctx.fillRect(mx-12, my-1, 24, 3);
+      }else if(dragItem.type==='stone'){
+        ctx.fillStyle='#6b6b73'; ctx.fillRect(mx-10, my-8, 20, 16); ctx.fillStyle='#8a8a94'; ctx.fillRect(mx-8, my-6, 14, 10); ctx.fillStyle='#4a4a52'; ctx.fillRect(mx-2, my, 10, 6);
       }else if(dragItem.type==='plank'){
         ctx.fillStyle='#e0d4a3'; ctx.fillRect(mx-14, my-7, 28, 14); ctx.fillStyle='#b9a77c'; ctx.fillRect(mx-14, my-2, 28, 4);
       } else if(dragItem.type==='stick'){
@@ -993,6 +1643,56 @@
     ctx.fillStyle = '#7ad66a'; ctx.fillRect(x, y, Math.floor(w*pct), h);
   }
 
+  function drawMineProgress(){
+    if(!mine.active || mine.total<=0) return;
+    const ro = rocks.find(r=>r.id===mine.rockId);
+    if(!ro) return;
+    const pct = Math.max(0, Math.min(1, (mine.total - mine.time)/mine.total));
+    const cx = Math.round(ro.x - camera.x);
+    const cy = Math.round(ro.y - camera.y);
+    const w = 30, h = 6, x = cx - (w>>1), y = cy + 12;
+    ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(x-1, y-1, w+2, h+2);
+    ctx.fillStyle = '#222'; ctx.fillRect(x, y, w, h);
+    ctx.fillStyle = '#8a8a94'; ctx.fillRect(x, y, Math.floor(w*pct), h);
+  }
+
+  function drawOreMineProgress(){
+    if(!oreMine.active || oreMine.total<=0) return;
+    const ore = ores.find(o=>o.id===oreMine.oreId);
+    if(!ore) return;
+    const pct = Math.max(0, Math.min(1, (oreMine.total - oreMine.time)/oreMine.total));
+    const cx = Math.round(ore.x - camera.x);
+    const cy = Math.round(ore.y - camera.y);
+    const w = 30, h = 6, x = cx - (w>>1), y = cy + 12;
+    ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(x-1, y-1, w+2, h+2);
+    ctx.fillStyle = '#222'; ctx.fillRect(x, y, w, h);
+    ctx.fillStyle = '#06b6d4'; ctx.fillRect(x, y, Math.floor(w*pct), h);
+  }
+
+  function drawOres(){
+    if(STYLE==='pixlake' && tiles.ready && tiles.ores){
+      for(const ore of ores){
+        const cx = Math.round(ore.x - camera.x), cy = Math.round(ore.y - camera.y);
+        const s = 2.24; // visual scale (80% of 2.8)
+        ctx.save(); ctx.globalAlpha=0.28; ctx.fillStyle='#000'; ctx.beginPath(); ctx.ellipse(cx, cy + Math.round(3*s), Math.round(6*s), Math.round(3*s), 0, 0, Math.PI*2); ctx.fill(); ctx.restore();
+        ctx.drawImage(tiles.ores[ore.type], cx - 8*s, cy - 8*s, 16*s, 16*s);
+        if(selectedOreId === ore.id){
+          const ax = cx, ay = cy - 16;
+          ctx.save(); ctx.fillStyle='#06b6d4'; ctx.strokeStyle='#0891b2'; ctx.lineWidth=1.5;
+          ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(ax-7, ay-10); ctx.lineTo(ax+7, ay-10); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.restore();
+        }
+      }
+      return;
+    }
+    const oreColors = {copper: '#d97706', tin: '#94a3b8', iron: '#78716c', silver: '#e5e7eb', gold: '#fbbf24', darkGold: '#a16207', diamond: '#06b6d4'};
+    for(const ore of ores){
+      const cx = Math.round(ore.x - camera.x), cy = Math.round(ore.y - camera.y);
+      ctx.fillStyle = oreColors[ore.type] || '#6b6b73'; ctx.beginPath(); ctx.arc(cx, cy, 10, 0, Math.PI*2); ctx.fill();
+      ctx.strokeStyle = '#4a4a52'; ctx.lineWidth = 2; ctx.stroke();
+      if(selectedOreId === ore.id){ const ax = cx, ay = cy - 16; ctx.save(); ctx.fillStyle='#06b6d4'; ctx.strokeStyle='#0891b2'; ctx.lineWidth=1.5; ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(ax-7, ay-10); ctx.lineTo(ax+7, ay-10); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.restore(); }
+    }
+  }
+
   // Trees: generate on grass only, non-passable
   function isGrass(wx, wy){
     const gx = Math.floor(wx / cell), gy = Math.floor(wy / cell);
@@ -1002,11 +1702,74 @@
   }
   const TREE_SPAWN_BUFFER = 140; // pixels to keep clear around spawn area (near 0,0)
   const CHOP_RANGE = 24; // distance within which chopping can start
+  const MINE_RANGE = 24; // distance for rock mining
+  let ROCK_SEQ = 0;
   function snapCenterX(wx){ return Math.floor(wx / cell) * cell + cell/2; }
   function snapCenterY(wy){ return Math.floor(wy / cell) * cell + cell/2; }
   function regenerateTrees(){
     // Clear existing and chunk cache; actual generation is lazy per chunk
-    trees.length = 0; TREE_SEQ = 0; treeChunks.clear();
+    trees.length = 0; TREE_SEQ = 0; rocks.length = 0; ROCK_SEQ = 0; ores.length = 0; ORE_SEQ = 0; treeChunks.clear();
+    
+    // ==========================================
+    // 地下城系统 - 暂时禁用（保留代码，待后续开发）
+    // ==========================================
+    /*
+    // Generate dungeon entrances (3-5 per world)
+    dungeonEntrances.length = 0; dungeons.clear(); dungeonIdSeq = 0;
+    const entranceCount = 3 + Math.floor(world.rng.float() * 3);
+    let attempts = 0;
+    for(let i = 0; i < entranceCount && attempts < 100; i++){
+      const angle = (i / entranceCount) * Math.PI * 2;
+      const dist = 400 + world.rng.float() * 600;
+      const ex = player.x + Math.cos(angle) * dist;
+      const ey = player.y + Math.sin(angle) * dist;
+      const pos = findLandNear(ex, ey, 0, 100, 20);
+      if(pos){
+        // 确保不在水上且不与树重叠
+        const clearRadius = 40;
+        let valid = true;
+        if(isWaterArea(pos.x, pos.y, clearRadius)){
+          valid = false;
+        }
+        // 确保周围没有树
+        if(valid && collidesTree(pos.x, pos.y, clearRadius)){
+          valid = false;
+        }
+        // 确保与其他入口有足够距离
+        for(const other of dungeonEntrances){
+          if(Math.hypot(other.x - pos.x, other.y - pos.y) < 300){
+            valid = false;
+            break;
+          }
+        }
+        
+        if(valid){
+          const dungeonId = dungeonIdSeq++;
+          dungeonEntrances.push({ x: pos.x, y: pos.y, id: dungeonEntrances.length, dungeonId });
+          // Create dungeon for this entrance
+          createDungeon(dungeonId, pos.x, pos.y);
+          // Place stone walls around entrance
+          for(let j = 0; j < 3 + Math.floor(world.rng.float() * 4); j++){
+            const wa = world.rng.float() * Math.PI * 2;
+            const wd = 80 + world.rng.float() * 120;
+            const wx = pos.x + Math.cos(wa) * wd;
+            const wy = pos.y + Math.sin(wa) * wd;
+            if(!isWaterArea(wx, wy, 16) && !collidesTree(wx, wy, 10)){
+              walls.push({ x: wx, y: wy, r: cell/2, hp: 120, hpMax: 120, type: 'stone' });
+            }
+          }
+        } else {
+          i--; // 重试
+          attempts++;
+        }
+      } else {
+        i--;
+        attempts++;
+      }
+    }
+    */
+    // 地下城系统结束
+    // ==========================================
   }
   function generateTreeChunk(cx, cy){
     const key = chunkKey(cx, cy); if(treeChunks.has(key)) return;
@@ -1031,6 +1794,37 @@
           // avoid clustering too tightly
           let ok = true; for(let i=trees.length-1;i>=0 && i>trees.length-300;i--){ const tr=trees[i]; const dx=tr.x-cxw, dy=tr.y-cyw; if(dx*dx+dy*dy < (cell*1.1)*(cell*1.1)){ ok=false; break; } }
           if(ok) trees.push({ id: ++TREE_SEQ, x: cxw, y: cyw, r: 10, type: (world.rng.float()<0.22?'apple':'normal') });
+        }
+        // Generate rocks with lower probability than trees
+        const rockProb = (P_MIN + (P_MAX - P_MIN) * Math.pow(t, 1.5)) * 0.4; // 40% of tree probability
+        if(world.rng.float() < rockProb){
+          // avoid clustering with trees and other rocks
+          let ok = true;
+          for(let i=trees.length-1;i>=0 && i>trees.length-300;i--){ const tr=trees[i]; const dx=tr.x-cxw, dy=tr.y-cyw; if(dx*dx+dy*dy < (cell*1.8)*(cell*1.8)){ ok=false; break; } }
+          for(let i=rocks.length-1;i>=0 && i>rocks.length-300;i--){ const ro=rocks[i]; const dx=ro.x-cxw, dy=ro.y-cyw; if(dx*dx+dy*dy < (cell*1.5)*(cell*1.5)){ ok=false; break; } }
+          if(ok) rocks.push({ id: ++ROCK_SEQ, x: cxw, y: cyw, r: 10 });
+        }
+        // Generate ores (rarer than rocks)
+        const oreProb = (P_MIN + (P_MAX - P_MIN) * Math.pow(t, 1.6)) * 0.15; // 15% of tree probability
+        if(world.rng.float() < oreProb){
+          // avoid clustering with trees, rocks, and other ores
+          let ok = true;
+          for(let i=trees.length-1;i>=0 && i>trees.length-300;i--){ const tr=trees[i]; const dx=tr.x-cxw, dy=tr.y-cyw; if(dx*dx+dy*dy < (cell*2)*(cell*2)){ ok=false; break; } }
+          for(let i=rocks.length-1;i>=0 && i>rocks.length-300;i--){ const ro=rocks[i]; const dx=ro.x-cxw, dy=ro.y-cyw; if(dx*dx+dy*dy < (cell*2)*(cell*2)){ ok=false; break; } }
+          for(let i=ores.length-1;i>=0 && i>ores.length-300;i--){ const ore=ores[i]; const dx=ore.x-cxw, dy=ore.y-cyw; if(dx*dx+dy*dy < (cell*2)*(cell*2)){ ok=false; break; } }
+          if(ok){
+            // Determine ore type based on rarity
+            const oreRoll = world.rng.float();
+            let oreType;
+            if(oreRoll < 0.30) oreType = 'copper';      // 30% - common
+            else if(oreRoll < 0.55) oreType = 'tin';    // 25% - common
+            else if(oreRoll < 0.75) oreType = 'iron';   // 20% - uncommon
+            else if(oreRoll < 0.88) oreType = 'silver'; // 13% - rare
+            else if(oreRoll < 0.96) oreType = 'gold';   // 8% - rare
+            else if(oreRoll < 0.99) oreType = 'darkGold'; // 3% - very rare
+            else oreType = 'diamond';                   // 1% - legendary
+            ores.push({ id: ++ORE_SEQ, x: cxw, y: cyw, r: 10, type: oreType });
+          }
         }
       }
     }
@@ -1164,6 +1958,217 @@
     const m = Math.floor((totalHours - Math.floor(totalHours)) * 60);
     const pad = (n)=> (n<10? '0'+n : ''+n);
     miniTimeEl.textContent = `时间：${pad(h)}:${pad(m)}`;
+  }
+  
+  // ==========================================
+  // 地下城生成系统
+  // ==========================================
+  function createDungeon(dungeonId, entranceX, entranceY){
+    const { rng } = world;
+    const dungeon = {
+      id: dungeonId,
+      entranceX, entranceY,
+      walls: [], // 地下城墙壁数据
+      doors: [], // 门数据
+      enemies: [], // 地下城敌人
+      chests: [], // 宝箱
+      spawnPoint: { x: 0, y: 0 },
+      exitPoint: { x: 0, y: -70 },
+      rooms: [],
+      corridors: []
+    };
+    
+    const WALL_THICKNESS = 12;
+    const DOOR_WIDTH = 48;
+    const CORRIDOR_WIDTH = 64;
+    
+    // 中心房间（方形，出生点）
+    const centerRoom = { x: 0, y: 0, w: 180, h: 180 };
+    dungeon.rooms.push(centerRoom);
+    dungeon.spawnPoint = { x: 0, y: 0 };
+    dungeon.exitPoint = { x: 0, y: -70 };
+    
+    // 四个方向生成房间（上下左右）
+    const directions = [
+      { name: 'north', dx: 0, dy: -1, axis: 'y' },
+      { name: 'south', dx: 0, dy: 1, axis: 'y' },
+      { name: 'west', dx: -1, dy: 0, axis: 'x' },
+      { name: 'east', dx: 1, dy: 0, axis: 'x' }
+    ];
+    
+    for(const dir of directions){
+      const roomsInDir = 1 + Math.floor(rng.float() * 2); // 1-2个房间
+      let prevRoom = centerRoom;
+      
+      for(let i = 0; i < roomsInDir; i++){
+        const roomW = 140 + Math.floor(rng.float() * 80);
+        const roomH = 140 + Math.floor(rng.float() * 80);
+        const corridorLen = 100 + Math.floor(rng.float() * 80);
+        
+        let newRoom;
+        if(dir.axis === 'y'){
+          // 上下方向
+          const rx = prevRoom.x + (rng.float() - 0.5) * 60; // 稍微偏移
+          const ry = prevRoom.y + dir.dy * (prevRoom.h/2 + corridorLen + roomH/2);
+          newRoom = { x: rx, y: ry, w: roomW, h: roomH };
+          // 创建竖直走廊
+          const cy1 = prevRoom.y + dir.dy * prevRoom.h/2;
+          const cy2 = newRoom.y - dir.dy * newRoom.h/2;
+          dungeon.corridors.push({
+            x: prevRoom.x,
+            y: (cy1 + cy2) / 2,
+            w: CORRIDOR_WIDTH,
+            h: Math.abs(cy2 - cy1),
+            dir: 'vertical',
+            door1: { x: prevRoom.x, y: cy1, side: dir.name, roomId: dungeon.rooms.length - 1 },
+            door2: { x: newRoom.x, y: cy2, side: dir.name === 'north' ? 'south' : 'north', roomId: dungeon.rooms.length }
+          });
+        } else {
+          // 左右方向
+          const rx = prevRoom.x + dir.dx * (prevRoom.w/2 + corridorLen + roomW/2);
+          const ry = prevRoom.y + (rng.float() - 0.5) * 60;
+          newRoom = { x: rx, y: ry, w: roomW, h: roomH };
+          // 创建水平走廊
+          const cx1 = prevRoom.x + dir.dx * prevRoom.w/2;
+          const cx2 = newRoom.x - dir.dx * newRoom.w/2;
+          dungeon.corridors.push({
+            x: (cx1 + cx2) / 2,
+            y: prevRoom.y,
+            w: Math.abs(cx2 - cx1),
+            h: CORRIDOR_WIDTH,
+            dir: 'horizontal',
+            door1: { x: cx1, y: prevRoom.y, side: dir.name, roomId: dungeon.rooms.length - 1 },
+            door2: { x: cx2, y: newRoom.y, side: dir.name === 'west' ? 'east' : 'west', roomId: dungeon.rooms.length }
+          });
+        }
+        
+        dungeon.rooms.push(newRoom);
+        prevRoom = newRoom;
+      }
+    }
+    
+    // 生成墙壁（每个房间的四周）
+    for(let i = 0; i < dungeon.rooms.length; i++){
+      const room = dungeon.rooms[i];
+      const hw = room.w / 2, hh = room.h / 2;
+      
+      // 上墙
+      dungeon.walls.push({
+        x: room.x, y: room.y - hh - WALL_THICKNESS/2,
+        w: room.w, h: WALL_THICKNESS,
+        side: 'north', roomId: i
+      });
+      // 下墙
+      dungeon.walls.push({
+        x: room.x, y: room.y + hh + WALL_THICKNESS/2,
+        w: room.w, h: WALL_THICKNESS,
+        side: 'south', roomId: i
+      });
+      // 左墙
+      dungeon.walls.push({
+        x: room.x - hw - WALL_THICKNESS/2, y: room.y,
+        w: WALL_THICKNESS, h: room.h,
+        side: 'west', roomId: i
+      });
+      // 右墙
+      dungeon.walls.push({
+        x: room.x + hw + WALL_THICKNESS/2, y: room.y,
+        w: WALL_THICKNESS, h: room.h,
+        side: 'east', roomId: i
+      });
+    }
+    
+    // 生成门（在走廊和房间连接处）
+    for(const corridor of dungeon.corridors){
+      dungeon.doors.push({
+        x: corridor.door1.x,
+        y: corridor.door1.y,
+        w: corridor.dir === 'vertical' ? DOOR_WIDTH : WALL_THICKNESS,
+        h: corridor.dir === 'horizontal' ? DOOR_WIDTH : WALL_THICKNESS,
+        open: false,
+        dir: corridor.dir
+      });
+      dungeon.doors.push({
+        x: corridor.door2.x,
+        y: corridor.door2.y,
+        w: corridor.dir === 'vertical' ? DOOR_WIDTH : WALL_THICKNESS,
+        h: corridor.dir === 'horizontal' ? DOOR_WIDTH : WALL_THICKNESS,
+        open: false,
+        dir: corridor.dir
+      });
+    }
+    
+    // 在房间中生成敌人（不在中心房间）
+    for(let i = 1; i < dungeon.rooms.length; i++){
+      const room = dungeon.rooms[i];
+      const enemyCount = 2 + Math.floor(rng.float() * 3);
+      for(let j = 0; j < enemyCount; j++){
+        // 确保敌人生成在房间内部，距离墙壁至少60像素
+        const safeMargin = 60;
+        const ex = room.x + (rng.float() - 0.5) * (room.w - safeMargin * 2);
+        const ey = room.y + (rng.float() - 0.5) * (room.h - safeMargin * 2);
+        const types = ['normal', 'fast', 'tank'];
+        const type = types[Math.floor(rng.float() * types.length)];
+        dungeon.enemies.push({ x: ex, y: ey, type, spawned: false, id: i * 100 + j });
+      }
+    }
+    
+    // 在房间中生成宝箱
+    for(let i = 1; i < dungeon.rooms.length; i += 2){
+      const room = dungeon.rooms[i];
+      const cx = room.x + (rng.float() - 0.5) * (room.w - 60);
+      const cy = room.y + (rng.float() - 0.5) * (room.h - 60);
+      const loot = [];
+      const lootTypes = ['gem', 'copper', 'tin', 'iron', 'silver', 'gold', 'diamond', 'apple', 'plank', 'stick'];
+      const lootCount = 2 + Math.floor(rng.float() * 4);
+      for(let j = 0; j < lootCount; j++){
+        const item = lootTypes[Math.floor(rng.float() * lootTypes.length)];
+        const amount = 1 + Math.floor(rng.float() * 5);
+        loot.push({ type: item, amount });
+      }
+      dungeon.chests.push({ x: cx, y: cy, loot, opened: false, id: i });
+    }
+    
+    dungeons.set(dungeonId, dungeon);
+  }
+  
+  // 检查点是否在地下城可通行区域
+  function isInDungeonWalkable(x, y){
+    if(!inDungeon || !currentDungeonId) return false;
+    const dungeon = dungeons.get(currentDungeonId);
+    if(!dungeon) return false;
+    
+    // 首先检查是否被关闭的门阻挡（最高优先级）
+    for(const door of dungeon.doors){
+      if(!door.open){
+        const hw = door.w / 2;
+        const hh = door.h / 2;
+        if(x >= door.x - hw && x <= door.x + hw &&
+           y >= door.y - hh && y <= door.y + hh){
+          return false; // 关闭的门阻挡
+        }
+      }
+    }
+    
+    // 检查是否在房间内
+    for(const room of dungeon.rooms){
+      if(x >= room.x - room.w/2 && x <= room.x + room.w/2 &&
+         y >= room.y - room.h/2 && y <= room.y + room.h/2){
+        return true;
+      }
+    }
+    
+    // 检查是否在走廊内
+    for(const corridor of dungeon.corridors){
+      const hw = corridor.w / 2;
+      const hh = corridor.h / 2;
+      if(x >= corridor.x - hw && x <= corridor.x + hw &&
+         y >= corridor.y - hh && y <= corridor.y + hh){
+        return true;
+      }
+    }
+    
+    return false;
   }
   function drawDayNightOverlay(){
     // Night alpha peaks at midnight, lighter at noon
@@ -1327,23 +2332,41 @@
   const cell = 16; // pixel tile size
   const scale1=1/48, scale2=1/128, scale3=1/20;
 
-  // Player
+  // ==========================================
+  // SECTION 4: 游戏核心系统
+  // ==========================================
+  
+  // -------------------- 玩家系统 --------------------
   const player = { x: 0, y:0, w:14, h:20, speed: 160, sprint: 260, dir: 'down', cd: 0, hpMax: 100, hp: 100, dead: false, respawn: 0, iUntil: 0, backpackReset: false, lastHitAt: 0, regenRate: 2, regenDelay: 3000, equipped: 'none', rangedCd: 0, bowCharging: false, bowCharge: 0, bowChargeMax: 1.2, moving:false, movePen:0,
     staminaMax: 100, stamina: 100, foodMax: 100, food: 100 };
   let _prevPX = 0, _prevPY = 0;
 
+  // -------------------- 敌人和实体系统 --------------------
   const enemies = [];
   const bullets = [];
   const particles = [];
   const drops = [];
   const damageTexts = [];
   const centerHints = []; let lastHintAt = 0;
-  const inventory = { gem: 8, wood: 8, plank: 8, stick: 8, workbench: 8, bow: 8, apple: 0 };
-  const walls = [];
+  
+  // -------------------- 库存系统 --------------------
+  const inventory = { gem: 16, wood: 16, plank: 16, stick: 16, workbench: 16, bow: 16, apple: 16, stone: 16, chest: 16, stoneAxe: 16, stoneWall: 16, stoneSword: 16, furnace: 16, pickaxe: 16, copper: 16, tin: 16, iron: 16, silver: 16, gold: 16, darkGold: 16, diamond: 16 };
+  const walls = []; // {x, y, r, hp, hpMax, type: 'wood'|'stone'}
   const benches = [];
   const trees = [];
+  const rocks = [];
+  const ores = []; // ore deposits
+  let ORE_SEQ = 0;
+  
+  // -------------------- 地下城系统 --------------------
+  const dungeonEntrances = []; // {x, y, id, dungeonId}
+  const dungeons = new Map(); // dungeonId -> dungeon data
+  let inDungeon = false;
+  let currentDungeonId = null;
+  let dungeonIdSeq = 0;
+  // -------------------- 战斗系统 --------------------
   // Player melee state/config
-  const MELEE = { range: 48, half: Math.PI/5, dmg: 28, cd: 0.45, fxMs: 110, kb: 140 };
+  const MELEE = { range: 48, half: Math.PI/5, dmg: 7, cd: 0.45, fxMs: 110, kb: 140 }; // Base dmg 1/4 of original 28
   const melee = { cd: 0, activeUntil: 0, angle: 0 };
   // Bow config: range and damage falloff (min multiplier at max range)
   const BOWCFG = { range: 600, minMult: 0.2 }; // 80% max reduction at max range
@@ -1384,6 +2407,10 @@
   function toWorld(mx,my){ return { x: mx + camera.x, y: my + camera.y }; }
   let selectedTreeId = null;
   const chop = { active:false, time:0, total:0, treeId:null };
+  let selectedRockId = null;
+  const mine = { active:false, time:0, total:0, rockId:null };
+  let selectedOreId = null;
+  const oreMine = { active:false, time:0, total:0, oreId:null };
   let backpackOpen = false;
   let benchOpen = false; let currentBench = null;
   let benchScroll = 0;
@@ -1414,21 +2441,49 @@
   function invCount(t){
     if(t==='gem') return inventory.gem;
     if(t==='wood') return inventory.wood;
+    if(t==='stone') return inventory.stone;
     if(t==='plank') return inventory.plank;
     if(t==='stick') return inventory.stick;
     if(t==='workbench') return inventory.workbench;
     if(t==='bow') return inventory.bow;
     if(t==='apple') return inventory.apple;
+    if(t==='chest') return inventory.chest;
+    if(t==='stoneAxe') return inventory.stoneAxe;
+    if(t==='stoneWall') return inventory.stoneWall;
+    if(t==='stoneSword') return inventory.stoneSword;
+    if(t==='furnace') return inventory.furnace;
+    if(t==='pickaxe') return inventory.pickaxe;
+    if(t==='copper') return inventory.copper;
+    if(t==='tin') return inventory.tin;
+    if(t==='iron') return inventory.iron;
+    if(t==='silver') return inventory.silver;
+    if(t==='gold') return inventory.gold;
+    if(t==='darkGold') return inventory.darkGold;
+    if(t==='diamond') return inventory.diamond;
     return 0;
   }
   function invDec(t){
     if(t==='gem' && inventory.gem>0){ inventory.gem--; return true; }
     if(t==='wood' && inventory.wood>0){ inventory.wood--; return true; }
+    if(t==='stone' && inventory.stone>0){ inventory.stone--; return true; }
     if(t==='plank' && inventory.plank>0){ inventory.plank--; return true; }
     if(t==='stick' && inventory.stick>0){ inventory.stick--; return true; }
     if(t==='workbench' && inventory.workbench>0){ inventory.workbench--; return true; }
     if(t==='bow' && inventory.bow>0){ inventory.bow--; return true; }
     if(t==='apple' && inventory.apple>0){ inventory.apple--; return true; }
+    if(t==='chest' && inventory.chest>0){ inventory.chest--; return true; }
+    if(t==='stoneAxe' && inventory.stoneAxe>0){ inventory.stoneAxe--; return true; }
+    if(t==='stoneWall' && inventory.stoneWall>0){ inventory.stoneWall--; return true; }
+    if(t==='stoneSword' && inventory.stoneSword>0){ inventory.stoneSword--; return true; }
+    if(t==='furnace' && inventory.furnace>0){ inventory.furnace--; return true; }
+    if(t==='pickaxe' && inventory.pickaxe>0){ inventory.pickaxe--; return true; }
+    if(t==='copper' && inventory.copper>0){ inventory.copper--; return true; }
+    if(t==='tin' && inventory.tin>0){ inventory.tin--; return true; }
+    if(t==='iron' && inventory.iron>0){ inventory.iron--; return true; }
+    if(t==='silver' && inventory.silver>0){ inventory.silver--; return true; }
+    if(t==='gold' && inventory.gold>0){ inventory.gold--; return true; }
+    if(t==='darkGold' && inventory.darkGold>0){ inventory.darkGold--; return true; }
+    if(t==='diamond' && inventory.diamond>0){ inventory.diamond--; return true; }
     return false;
   }
   function closeBackpackRefund(){
@@ -1437,6 +2492,7 @@
       const it = craftingSlots[i]; if(!it) continue;
       if(it.type==='wood') inventory.wood += 1;
       else if(it.type==='gem') inventory.gem += 1;
+      else if(it.type==='stone') inventory.stone += 1;
       else if(it.type==='plank') inventory.plank += 1;
       else if(it.type==='stick') inventory.stick += 1;
       else if(it.type==='workbench') inventory.workbench += 1;
@@ -1555,13 +2611,17 @@
   window.toggleSpawn = ()=>{ spawnEnabled = !spawnEnabled; return spawnEnabled; };
   function cancelTreeInteraction(){
     player.target = null; selectedTreeId = null; chop.active=false; chop.treeId=null; chop.time=0; chop.total=0;
+    selectedRockId = null; mine.active=false; mine.rockId=null; mine.time=0; mine.total=0;
+    selectedOreId = null; oreMine.active=false; oreMine.oreId=null; oreMine.time=0; oreMine.total=0;
   }
   const EnemyTypes = {
     // armor: flat reduction that applies only while shield>0; shieldMax: shield capacity
     normal: { hp: 40, spd: 80, atk: 12, aggro: 180, touchR: 14, color: '#ff6b6b', wallCollideR: 6, armor: 8, shieldMax: 15 },
     runner: { hp: 28, spd: 130, atk: 9, aggro: 200, touchR: 12, color: '#f6c90e', wallCollideR: 6, armor: 1, shieldMax: 5 },
     tank:   { hp: 80, spd: 60, atk: 18, aggro: 160, touchR: 16, color: '#6c5ce7', wallCollideR: 8, armor: 4, shieldMax: 30 },
-    brute:  { hp: 150, spd: 85, atk: 22, aggro: 180, touchR: 24, color: '#d35400', wallCollideR: 16, armor: 6, shieldMax: 80 }
+    brute:  { hp: 150, spd: 85, atk: 22, aggro: 180, touchR: 24, color: '#d35400', wallCollideR: 16, armor: 6, shieldMax: 80 },
+    // cow: 中立生物，不主动攻击，没有索敌圈和警戒圈，被攻击会巡逻
+    cow:    { hp: 60, spd: 50, atk: 0, aggro: 0, touchR: 16, color: '#8b7355', wallCollideR: 8, armor: 0, shieldMax: 0 }
   };
   function makeEnemy(type){
     const t = EnemyTypes[type]||EnemyTypes.normal;
@@ -1617,6 +2677,33 @@
   }
   // scatter more initial enemies across a wide area
   spawnEnemies(24);
+  
+  // 生成中立牛
+  function spawnCows(n){
+    const { rng } = world;
+    for(let i=0;i<n;i++){
+      const ex = (rng.int(3000)-1500);
+      const ey = (rng.int(3000)-1500);
+      const e = makeEnemy('cow');
+      let pos = findLandNear(ex, ey, 80, 240, 24);
+      if(!pos || isWaterArea(pos.x, pos.y, 14)) pos = nearestLandTile(ex, ey, 160);
+      if(pos && !isTreeFree(pos.x, pos.y, e.r)){
+        const alt = findClearNear(pos.x, pos.y, 30, 160, 24);
+        if(alt) pos = alt; else { continue; }
+      }
+      if(!pos) continue;
+      // 确保牛不会离玩家太近
+      const dp0 = Math.hypot((pos.x - player.x), (pos.y - player.y));
+      if(dp0 < 300){
+        const altFar = findLandNear(player.x, player.y, 400, 800, 24);
+        if(altFar) pos = altFar; else { continue; }
+      }
+      e.x = pos.x; e.y = pos.y; enemies.push(e);
+    }
+  }
+  // 生成8-12只牛在世界各地
+  spawnCows(8 + Math.floor(Math.random() * 5));
+  
   let spawnTimer = 2.5;
   let timeAlive = 0;
   let dayTime = 0;           // seconds progressed in day
@@ -1653,10 +2740,14 @@
     }
   }
 
+  // ==========================================
+  // SECTION 5: 输入处理
+  // ==========================================
+  
   // Input
   const keys = new Set();
   window.addEventListener('keydown', (e)=>{ 
-    if(['KeyW','KeyA','KeyS','KeyD','ShiftLeft','ShiftRight','KeyR','Tab','KeyG','KeyF'].includes(e.code)) e.preventDefault(); 
+    if(['KeyW','KeyA','KeyS','KeyD','ShiftLeft','ShiftRight','KeyR','Tab','KeyG','KeyF','KeyE'].includes(e.code)) e.preventDefault(); 
     if(e.code==='Tab'){
       // If workbench is open, close it (refund items) and DO NOT open backpack
       if(benchOpen){
@@ -1665,6 +2756,7 @@
             const it=currentBench.slots[i]; if(!it) continue;
             if(it.type==='wood') inventory.wood+=1; 
             else if(it.type==='gem') inventory.gem+=1; 
+            else if(it.type==='stone') inventory.stone+=1; 
             else if(it.type==='plank') inventory.plank+=1; 
             else if(it.type==='stick') inventory.stick+=1; 
             else if(it.type==='workbench') inventory.workbench+=1; 
@@ -1688,6 +2780,71 @@
     if(e.code==='KeyF'){
       // Cancel bow charging without firing
       if(player.bowCharging){ player.bowCharging=false; player.bowCharge=0; sfxSlash(); }
+      return;
+    }
+    if(e.code==='KeyE'){
+      // 在地下城中，优先检查门
+      if(inDungeon && currentDungeonId){
+        const dungeon = dungeons.get(currentDungeonId);
+        if(dungeon){
+          // 检查是否靠近门
+          for(const door of dungeon.doors){
+            const dist = Math.hypot(player.x - door.x, player.y - door.y);
+            if(dist < 35){
+              door.open = !door.open;
+              sfxPickup();
+              return;
+            }
+          }
+          
+          // 检查是否在出口
+          const exitDist = Math.hypot(player.x - dungeon.exitPoint.x, player.y - dungeon.exitPoint.y);
+          if(exitDist < 50){
+            inDungeon = false;
+            // 传送回地表入口
+            for(const entrance of dungeonEntrances){
+              if(entrance.dungeonId === currentDungeonId){
+                player.x = entrance.x;
+                player.y = entrance.y + 60;
+                camera.x = player.x - canvas.width / 2;
+                camera.y = player.y - canvas.height / 2;
+                break;
+              }
+            }
+            currentDungeonId = null;
+            sfxPickup();
+            return;
+          }
+        }
+      } else {
+        // 尝试进入地下城
+        for(const entrance of dungeonEntrances){
+          const dist = Math.hypot(player.x - entrance.x, player.y - entrance.y);
+          if(dist < 50){
+            inDungeon = true;
+            currentDungeonId = entrance.dungeonId;
+            const dungeon = dungeons.get(currentDungeonId);
+            if(dungeon){
+              player.x = dungeon.spawnPoint.x;
+              player.y = dungeon.spawnPoint.y;
+              camera.x = player.x - canvas.width / 2;
+              camera.y = player.y - canvas.height / 2;
+              // 生成地下城敌人
+              for(const enemyData of dungeon.enemies){
+                if(!enemyData.spawned){
+                  const e = makeEnemy(enemyData.type);
+                  e.x = enemyData.x;
+                  e.y = enemyData.y;
+                  enemies.push(e);
+                  enemyData.spawned = true;
+                }
+              }
+              sfxPickup();
+            }
+            break;
+          }
+        }
+      }
       return;
     }
     keys.add(e.code); 
@@ -1776,11 +2933,38 @@
           }
         }
         // buttons first (inside highlighted row)
-        if(backpackLayout.plankUseBtn){ const b=backpackLayout.plankUseBtn; if(mx>=b.x&&mx<=b.x+b.w&&my>=b.y&&my<=b.y+b.h){ placeMode.active=true; placeMode.type='wall'; placeMode.skipClick=true; closeBackpackRefund(); return; } }
-        if(backpackLayout.benchUseBtn){ const b=backpackLayout.benchUseBtn; if(mx>=b.x&&mx<=b.x+b.w&&my>=b.y&&my<=b.y+b.h){ placeMode.active=true; placeMode.type='bench'; placeMode.skipClick=true; closeBackpackRefund(); return; } }
-        if(backpackLayout.chestUseBtn){ const b=backpackLayout.chestUseBtn; if(mx>=b.x&&mx<=b.x+b.w&&my>=b.y&&my<=b.y+b.h){ placeMode.active=true; placeMode.type='chest'; placeMode.skipClick=true; closeBackpackRefund(); return; } }
-        if(backpackLayout.bowUseBtn){ const b=backpackLayout.bowUseBtn; if(mx>=b.x&&mx<=b.x+b.w&&my>=b.y&&my<=b.y+b.h){ player.equipped = (player.equipped==='bow'?'none':'bow'); return; } }
-        if(backpackLayout.appleUseBtn){ const b=backpackLayout.appleUseBtn; if(mx>=b.x&&mx<=b.x+b.w&&my>=b.y&&my<=b.y+b.h){ if(inventory.apple>0){ inventory.apple--; const gain=(player.foodMax||1)*0.20; player.food = Math.min((player.foodMax||0), (player.food||0)+gain); pickupTexts.push({x:player.x,y:player.y-10,txt:`食物 +${Math.round((gain/(player.foodMax||1))*100)}%`,color:'#4ade80',a:1,vy:-28}); sfxPickup(); } return; } }
+        // Handle primary buttons (equip/unequip)
+        if(backpackLayout && Array.isArray(backpackLayout.primaryBtns)){
+          for(const b of backpackLayout.primaryBtns){
+            if(mx>=b.x && mx<=b.x+b.w && my>=b.y && my<=b.y+b.h){
+              const t=b.type;
+              // Placement buttons
+              if(t==='plank'){ placeMode.active=true; placeMode.type='wall'; placeMode.skipClick=true; closeBackpackRefund(); return; }
+              if(t==='stoneWall'){ placeMode.active=true; placeMode.type='stoneWall'; placeMode.skipClick=true; closeBackpackRefund(); return; }
+              if(t==='workbench'){ placeMode.active=true; placeMode.type='bench'; placeMode.skipClick=true; closeBackpackRefund(); return; }
+              if(t==='chest'){ placeMode.active=true; placeMode.type='chest'; placeMode.skipClick=true; closeBackpackRefund(); return; }
+              // Apple consumption
+              if(t==='apple'){ if(inventory.apple>0){ inventory.apple--; const gain=(player.foodMax||1)*0.20; player.food = Math.min((player.foodMax||0), (player.food||0)+gain); pickupTexts.push({x:player.x,y:player.y-10,txt:`食物 +${Math.round((gain/(player.foodMax||1))*100)}%`,color:'#4ade80',a:1,vy:-28}); sfxPickup(); } return; }
+              // Equipment buttons with mutual exclusion
+              if(t==='bow'||t==='pickaxe'||t==='stoneAxe'||t==='stoneSword'){
+                // Check if trying to equip when already equipped with another item
+                if(player.equipped!==t && player.equipped!=='none'){
+                  const now = performance.now();
+                  if(now - (lastHintAt||0) > 800){
+                    lastHintAt = now;
+                    centerHints.push({ txt:'请先卸下手上的工具', until: now + 1200 });
+                  }
+                  return;
+                }
+                // Toggle equip/unequip
+                if(t==='bow'){ player.equipped = (player.equipped==='bow'?'none':'bow'); return; }
+                if(t==='pickaxe'){ player.equipped = (player.equipped==='pickaxe'?'none':'pickaxe'); return; }
+                if(t==='stoneAxe'){ player.equipped = (player.equipped==='stoneAxe'?'none':'stoneAxe'); return; }
+                if(t==='stoneSword'){ player.equipped = (player.equipped==='stoneSword'?'none':'stoneSword'); return; }
+              }
+            }
+          }
+        }
         // craft button
         if(backpackLayout.craftBtn){ const b=backpackLayout.craftBtn; if(mx>=b.x&&mx<=b.x+b.w&&my>=b.y&&my<=b.y+b.h){ craftAttempt(); return; } }
         // list single-click selects type
@@ -1807,9 +2991,24 @@
             if(mx>=b.x && mx<=b.x+b.w && my>=b.y && my<=b.y+b.h){
               const t=b.type;
               if(t==='plank'){ placeMode.active=true; placeMode.type='wall'; placeMode.skipClick=true; benchOpen=false; currentBench=null; backpackSelectedType=null; return; }
+              if(t==='stoneWall'){ placeMode.active=true; placeMode.type='stoneWall'; placeMode.skipClick=true; benchOpen=false; currentBench=null; backpackSelectedType=null; return; }
               if(t==='workbench'){ placeMode.active=true; placeMode.type='bench'; placeMode.skipClick=true; benchOpen=false; currentBench=null; backpackSelectedType=null; return; }
               if(t==='chest'){ placeMode.active=true; placeMode.type='chest'; placeMode.skipClick=true; benchOpen=false; currentBench=null; backpackSelectedType=null; return; }
-              if(t==='bow'){ player.equipped = (player.equipped==='bow'?'none':'bow'); return; }
+              // Equipment mutual exclusion check
+              if(t==='bow'||t==='pickaxe'||t==='stoneAxe'||t==='stoneSword'){
+                if(player.equipped!==t && player.equipped!=='none'){
+                  const now = performance.now();
+                  if(now - (lastHintAt||0) > 800){
+                    lastHintAt = now;
+                    centerHints.push({ txt:'请先卸下手上的工具', until: now + 1200 });
+                  }
+                  return;
+                }
+                if(t==='bow'){ player.equipped = (player.equipped==='bow'?'none':'bow'); return; }
+                if(t==='pickaxe'){ player.equipped = (player.equipped==='pickaxe'?'none':'pickaxe'); return; }
+                if(t==='stoneAxe'){ player.equipped = (player.equipped==='stoneAxe'?'none':'stoneAxe'); return; }
+                if(t==='stoneSword'){ player.equipped = (player.equipped==='stoneSword'?'none':'stoneSword'); return; }
+              }
               if(t==='apple'){ if(inventory.apple>0){ inventory.apple--; const gain=(player.foodMax||1)*0.20; player.food = Math.min((player.foodMax||0), (player.food||0)+gain); pickupTexts.push({x:player.x,y:player.y-10,txt:`食物 +${Math.round((gain/(player.foodMax||1))*100)}%`,color:'#4ade80',a:1,vy:-28}); sfxPickup(); } return; }
             }
           }
@@ -1896,16 +3095,25 @@
         // simple checks: on land and not colliding with tree/wall; avoid duplicate at same cell
         let duplicate=false; for(const w of walls){ if(Math.abs(w.x - sx) < 1 && Math.abs(w.y - sy) < 1){ duplicate=true; break; } }
         const tooClosePlayer = Math.hypot(sx - player.x, sy - player.y) <= (cell/2 + 12);
-        if(!duplicate && !tooClosePlayer && !isWaterArea(sx, sy, cell*0.4) && !collidesTree(sx, sy, 10) && !collidesWall(sx, sy, Math.max(1, cell/2 - 2))){
-          walls.push({ x: sx, y: sy, r: cell/2, hp: 60, hpMax: 60 });
+        if(!duplicate && !tooClosePlayer && !isWaterArea(sx, sy, cell*0.4) && !collidesTree(sx, sy, 10) && !collidesRock(sx, sy, 10) && !collidesOre(sx, sy, 10) && !collidesWall(sx, sy, Math.max(1, cell/2 - 2))){
+          walls.push({ x: sx, y: sy, r: cell/2, hp: 60, hpMax: 60, type: 'wood' });
           inventory.plank -= 1;
+          sfxPickup();
+        }
+      } else if(placeMode.type==='stoneWall' && inventory.stoneWall>0){
+        // 放置石墙（更坚固）
+        let duplicate=false; for(const w of walls){ if(Math.abs(w.x - sx) < 1 && Math.abs(w.y - sy) < 1){ duplicate=true; break; } }
+        const tooClosePlayer = Math.hypot(sx - player.x, sy - player.y) <= (cell/2 + 12);
+        if(!duplicate && !tooClosePlayer && !isWaterArea(sx, sy, cell*0.4) && !collidesTree(sx, sy, 10) && !collidesRock(sx, sy, 10) && !collidesOre(sx, sy, 10) && !collidesWall(sx, sy, Math.max(1, cell/2 - 2))){
+          walls.push({ x: sx, y: sy, r: cell/2, hp: 120, hpMax: 120, type: 'stone' });
+          inventory.stoneWall -= 1;
           sfxPickup();
         }
       } else if(placeMode.type==='bench' && inventory.workbench>0){
         // place workbench similar checks
         let duplicate=false; for(const b of benches){ if(Math.abs(b.x - sx) < 1 && Math.abs(b.y - sy) < 1){ duplicate=true; break; } }
         const tooClosePlayer = Math.hypot(sx - player.x, sy - player.y) <= (cell/2 + 12);
-        if(!duplicate && !tooClosePlayer && !isWaterArea(sx, sy, cell*0.4) && !collidesTree(sx, sy, 10) && !collidesWall(sx, sy, Math.max(1, cell/2 - 2))){
+        if(!duplicate && !tooClosePlayer && !isWaterArea(sx, sy, cell*0.4) && !collidesTree(sx, sy, 10) && !collidesRock(sx, sy, 10) && !collidesOre(sx, sy, 10) && !collidesWall(sx, sy, Math.max(1, cell/2 - 2))){
           benches.push({ x: sx, y: sy, r: cell/2 });
           inventory.workbench -= 1;
           sfxPickup();
@@ -1913,7 +3121,7 @@
       } else if(placeMode.type==='chest' && inventory.chest>0){
         let duplicate=false; for(const c of chests){ if(Math.abs(c.x - sx) < 1 && Math.abs(c.y - sy) < 1){ duplicate=true; break; } }
         const tooClosePlayer = Math.hypot(sx - player.x, sy - player.y) <= (cell/2 + 12);
-        if(!duplicate && !tooClosePlayer && !isWaterArea(sx, sy, cell*0.4) && !collidesTree(sx, sy, 10) && !collidesWall(sx, sy, Math.max(1, cell/2 - 2))){
+        if(!duplicate && !tooClosePlayer && !isWaterArea(sx, sy, cell*0.4) && !collidesTree(sx, sy, 10) && !collidesRock(sx, sy, 10) && !collidesOre(sx, sy, 10) && !collidesWall(sx, sy, Math.max(1, cell/2 - 2))){
           chests.push({ x: sx, y: sy, r: cell/2, slots: new Array(32).fill(null) });
           inventory.chest -= 1;
           sfxPickup();
@@ -1938,6 +3146,36 @@
       }
       if(bestB){ benchOpen=true; currentBench=bestB; backpackSelectedType=null; mouse.down=false; return; }
     }
+    // 地下城宝箱点击
+    if(inDungeon && currentDungeonId){
+      const dungeon = dungeons.get(currentDungeonId);
+      if(dungeon){
+        for(const chest of dungeon.chests){
+          if(chest.opened) continue;
+          const dClick = Math.hypot(chest.x - wp.x, chest.y - wp.y);
+          const dPlayer = Math.hypot(chest.x - player.x, chest.y - player.y);
+          if(dClick < 24 && dPlayer <= 60){
+            // 打开宝箱并获得物品
+            chest.opened = true;
+            for(const item of chest.loot){
+              if(inventory[item.type] !== undefined){
+                inventory[item.type] = (inventory[item.type] || 0) + item.amount;
+                pickupTexts.push({
+                  x: chest.x, 
+                  y: chest.y - 20,
+                  txt: `+${item.amount} ${item.type}`,
+                  color: '#fbbf24',
+                  a: 1,
+                  vy: -28
+                });
+              }
+            }
+            sfxPickup();
+            return;
+          }
+        }
+      }
+    }
     // open chest UI when clicking near a placed chest
     {
       let bestC=null, bdC=1e9;
@@ -1954,6 +3192,30 @@
     if(best){ selectedTreeId = best.id; chop.active=false; chop.treeId=null; chop.time=0; chop.total=0; mouse.down=false; // stop shooting
       // set target slightly below canopy to stand under
       player.target = { x: best.x, y: best.y - 6 };
+      return;
+    }
+    // start rock interaction (approach and mine) if clicked near a rock
+    let bestRock=null, bdRock=1e9;
+    for(const ro of rocks){ const d=Math.hypot(ro.x-wp.x, ro.y-wp.y); if(d<18 && d<bdRock){ bestRock=ro; bdRock=d; } }
+    if(bestRock){ selectedRockId = bestRock.id; mine.active=false; mine.rockId=null; mine.time=0; mine.total=0; mouse.down=false;
+      player.target = { x: bestRock.x, y: bestRock.y };
+      return;
+    }
+    // start ore interaction (requires pickaxe equipped)
+    let bestOre=null, bdOre=1e9;
+    for(const ore of ores){ const d=Math.hypot(ore.x-wp.x, ore.y-wp.y); if(d<18 && d<bdOre){ bestOre=ore; bdOre=d; } }
+    if(bestOre){
+      if(player.equipped !== 'pickaxe'){
+        // show hint that pickaxe is required
+        const now = performance.now();
+        if(now - (lastHintAt||0) > 800){
+          lastHintAt = now;
+          centerHints.push({ txt:'需要装备石镐才能挖掘矿石', until: now + 1200 });
+        }
+      } else {
+        selectedOreId = bestOre.id; oreMine.active=false; oreMine.oreId=null; oreMine.time=0; oreMine.total=0; mouse.down=false;
+        player.target = { x: bestOre.x, y: bestOre.y };
+      }
     }
   });
   canvas.addEventListener('mouseup',(e)=>{ if(e.button===0){
@@ -2010,6 +3272,7 @@
         if(dragItem.origin==='slot'){
           if(dragItem.type==='wood') inventory.wood += 1;
           else if(dragItem.type==='gem') inventory.gem += 1;
+          else if(dragItem.type==='stone') inventory.stone += 1;
           else if(dragItem.type==='plank') inventory.plank += 1;
           else if(dragItem.type==='stick') inventory.stick += 1;
           else if(dragItem.type==='workbench') inventory.workbench += 1;
@@ -2073,6 +3336,23 @@
     e.preventDefault();
     // Right-click cancels current UI actions
     if(backpackOpen){
+      const r=canvas.getBoundingClientRect(); const mx=e.clientX-r.left, my=e.clientY-r.top;
+      // Right-click on crafting slot to remove item and return to inventory
+      if(backpackLayout && Array.isArray(backpackLayout.slots)){
+        for(let i=0;i<backpackLayout.slots.length;i++){
+          const s=backpackLayout.slots[i];
+          if(mx>=s.x && mx<=s.x+s.w && my>=s.y && my<=s.y+s.h){
+            const it=craftingSlots[i];
+            if(it){
+              const t=it.type;
+              if(t==='wood') inventory.wood+=1; else if(t==='gem') inventory.gem+=1; else if(t==='stone') inventory.stone+=1; else if(t==='plank') inventory.plank+=1; else if(t==='stick') inventory.stick+=1; else if(t==='workbench') inventory.workbench+=1; else if(t==='chest') inventory.chest+=1; else if(t==='bow') inventory.bow+=1; else if(t==='apple') inventory.apple+=1;
+              craftingSlots[i]=null; sfxPickup();
+              return;
+            }
+            break;
+          }
+        }
+      }
       dragItem=null; listMouseDown=null; listDragArmed=false; listDragActive=false; backpackSelectedType=null; return;
     }
     if(benchOpen){
@@ -2088,7 +3368,7 @@
             const it=currentChest?.slots?.[i];
             if(it){
               const t=it.type;
-              if(t==='wood') inventory.wood+=1; else if(t==='gem') inventory.gem+=1; else if(t==='plank') inventory.plank+=1; else if(t==='stick') inventory.stick+=1; else if(t==='workbench') inventory.workbench+=1; else if(t==='chest') inventory.chest+=1; else if(t==='bow') inventory.bow+=1; else if(t==='apple') inventory.apple+=1;
+              if(t==='wood') inventory.wood+=1; else if(t==='gem') inventory.gem+=1; else if(t==='stone') inventory.stone+=1; else if(t==='plank') inventory.plank+=1; else if(t==='stick') inventory.stick+=1; else if(t==='workbench') inventory.workbench+=1; else if(t==='chest') inventory.chest+=1; else if(t==='bow') inventory.bow+=1; else if(t==='apple') inventory.apple+=1;
               currentChest.slots[i]=null; sfxPickup();
               return;
             }
@@ -2147,6 +3427,10 @@
   if(miniMinus) miniMinus.addEventListener('click',()=>{ minimapStep = Math.max(1, minimapStep-1); beep(520,0.03,'square'); });
   if(miniPlus)  miniPlus.addEventListener('click',()=>{ minimapStep = Math.max(minimapStep, Math.min(24, minimapStep+1)); beep(620,0.03,'square'); });
 
+  // ==========================================
+  // SECTION 6: 游戏循环与更新
+  // ==========================================
+  
   function update(dt){
     // Pause simulation when backpack is open
     if(backpackOpen){
@@ -2225,12 +3509,13 @@
     const manual = (keys.has('KeyW')||keys.has('KeyS')||keys.has('KeyA')||keys.has('KeyD'));
     if(manual){ cancelTreeInteraction(); }
     // Auto approach selected tree if no manual input and not chopping
-    if(!manual && !chop.active && selectedTreeId){
+    if(!manual && !chop.active && !mine.active && selectedTreeId){
       const t = trees.find(tr => tr.id===selectedTreeId);
       if(t){
         const dTree = Math.hypot(t.x - player.x, t.y - player.y);
         if(dTree <= CHOP_RANGE){
-          chop.active=true; chop.time=2.0; chop.total=2.0; chop.treeId=t.id; player.target=null;
+          const chopTime = (player.equipped==='stoneAxe' ? 1.0 : 2.0); // Stone axe 2x faster
+          chop.active=true; chop.time=chopTime; chop.total=chopTime; chop.treeId=t.id; player.target=null;
         }else if(player.target){
           const tx = player.target.x, ty = player.target.y;
           const vx = tx - player.x, vy = ty - player.y; const d = Math.hypot(vx,vy)||1;
@@ -2241,12 +3526,55 @@
         cancelTreeInteraction();
       }
     }
+    // Auto approach selected rock if no manual input and not mining
+    if(!manual && !mine.active && !chop.active && !oreMine.active && selectedRockId){
+      const ro = rocks.find(r => r.id===selectedRockId);
+      if(ro){
+        const dRock = Math.hypot(ro.x - player.x, ro.y - player.y);
+        if(dRock <= MINE_RANGE){
+          const mineTime = (player.equipped==='pickaxe' ? 2.0 : 4.0); // Stone pick 2x faster
+          mine.active=true; mine.time=mineTime; mine.total=mineTime; mine.rockId=ro.id; player.target=null;
+        }else if(player.target){
+          const tx = player.target.x, ty = player.target.y;
+          const vx = tx - player.x, vy = ty - player.y; const d = Math.hypot(vx,vy)||1;
+          dx = vx/d; dy = vy/d;
+        }
+      } else {
+        // rock no longer exists
+        cancelTreeInteraction();
+      }
+    }
+    // Auto approach selected ore if no manual input and not mining (requires pickaxe)
+    if(!manual && !oreMine.active && !mine.active && !chop.active && selectedOreId && player.equipped === 'pickaxe'){
+      const ore = ores.find(o => o.id===selectedOreId);
+      if(ore){
+        const dOre = Math.hypot(ore.x - player.x, ore.y - player.y);
+        if(dOre <= MINE_RANGE){
+          oreMine.active=true; oreMine.time=6.0; oreMine.total=6.0; oreMine.oreId=ore.id; player.target=null;
+        }else if(player.target){
+          const tx = player.target.x, ty = player.target.y;
+          const vx = tx - player.x, vy = ty - player.y; const d = Math.hypot(vx,vy)||1;
+          dx = vx/d; dy = vy/d;
+        }
+      } else {
+        // ore no longer exists
+        cancelTreeInteraction();
+      }
+    }
     const len = Math.hypot(dx,dy)||1; dx/=len; dy/=len;
-    // attempt movement with water blocking (axis-wise resolution)
+    // attempt movement with collision detection
     const nx = player.x + dx*spd*dt;
     const ny = player.y + dy*spd*dt;
-    if(!isWater(nx, player.y) && !collidesTree(nx, player.y, 10) && !collidesWall(nx, player.y, 6)) player.x = nx;
-    if(!isWater(player.x, ny) && !collidesTree(player.x, ny, 10) && !collidesWall(player.x, ny, 6)) player.y = ny;
+    
+    if(inDungeon){
+      // 地下城中只能在房间和走廊内移动
+      if(isInDungeonWalkable(nx, player.y)) player.x = nx;
+      if(isInDungeonWalkable(player.x, ny)) player.y = ny;
+    } else {
+      // 地表碰撞检测
+      if(!isWater(nx, player.y) && !collidesTree(nx, player.y, 10) && !collidesRock(nx, player.y, 10) && !collidesOre(nx, player.y, 10) && !collidesWall(nx, player.y, 6)) player.x = nx;
+      if(!isWater(player.x, ny) && !collidesTree(player.x, ny, 10) && !collidesRock(player.x, ny, 10) && !collidesOre(player.x, ny, 10) && !collidesWall(player.x, ny, 6)) player.y = ny;
+    }
     // Stamina & Food systems
     const sprinting = canSprintNow && (dx!==0 || dy!==0);
     const chargingActive = (player.equipped==='bow' && player.bowCharging);
@@ -2309,8 +3637,30 @@
       chop.active=false; chop.treeId=null;
     } }
 
+    // Mining timer (4 seconds for rocks)
+    if(mine.active){ mine.time -= dt; if(mine.time<=0){
+      // Finish mining: remove rock and drop stone
+      const idx = rocks.findIndex(ro=>ro.id===mine.rockId);
+      if(idx>=0){ const ro=rocks[idx];
+        rocks.splice(idx,1);
+        drops.push({ x: ro.x, y: ro.y, r: 5, a: 1, val: 1+Math.floor(Math.random()*2), type:'stone' });
+      }
+      mine.active=false; mine.rockId=null;
+    } }
+
+    // Ore mining timer (6 seconds, requires pickaxe)
+    if(oreMine.active){ oreMine.time -= dt; if(oreMine.time<=0){
+      // Finish mining: remove ore and drop corresponding ore type
+      const idx = ores.findIndex(o=>o.id===oreMine.oreId);
+      if(idx>=0){ const ore=ores[idx];
+        ores.splice(idx,1);
+        drops.push({ x: ore.x, y: ore.y, r: 5, a: 1, val: 1+Math.floor(Math.random()*2), type: ore.type });
+      }
+      oreMine.active=false; oreMine.oreId=null;
+    } }
+
     player.cd -= dt;
-    if(mouse.down && !backpackOpen && !benchOpen && !placeMode.active && !selectedTreeId){
+    if(mouse.down && !backpackOpen && !benchOpen && !placeMode.active && !selectedTreeId && !selectedRockId && !selectedOreId){
       if(player.equipped!=='bow' && !player.bowCharging){
         // hold to chain melee; attempt only when off cooldown
         if(melee.cd<=0) attemptMelee();
@@ -2395,11 +3745,14 @@
           const gain = (e.shieldMax||0) * 0.25 * cycles;
           if(gain>0) e.shield = Math.min((e.shieldMax||0), (e.shield||0) + gain);
         }
-        if(dp < alertR){ e.state='patrol'; e.patrolSince = performance.now(); }
+        // 牛不会因为玩家靠近而进入patrol，只有被攻击才会
+        if(e.type !== 'cow' && dp < alertR){ e.state='patrol'; e.patrolSince = performance.now(); }
       } else if(e.state==='patrol'){
         if(dp < e.aggro){ e.attack = true; }
         const since = performance.now() - (e.patrolSince||0);
-        if(!e.attack && since > 5000){ e.state='rest'; e.restHoursForShield = 0; e.lastRestHourStamp = totalHours; }
+        // 牛在patrol状态总长一些（10秒），其他敌人5秒
+        const patrolDuration = (e.type === 'cow') ? 10000 : 5000;
+        if(!e.attack && since > patrolDuration){ e.state='rest'; e.restHoursForShield = 0; e.lastRestHourStamp = totalHours; }
       }
       if(e.attack && dp > e.aggro*1.5){ e.attack=false; if(e.state!=='rest') e.state='patrol'; }
 
@@ -2496,13 +3849,26 @@
       const ex = e.x + e.vx*dt; const ey = e.y + e.vy*dt;
       const wallRad = e.wallR||6;
       let blockedX = collidesWall(ex, e.y, wallRad), blockedY = collidesWall(e.x, ey, wallRad);
-      if(!isWater(ex, e.y) && !collidesTree(ex, e.y, e.r) && !blockedX) e.x = ex; else { e.turn = 0; }
-      if(!isWater(e.x, ey) && !collidesTree(e.x, ey, e.r) && !blockedY) e.y = ey; else { e.turn = 0; }
+      if(!isWater(ex, e.y) && !collidesTree(ex, e.y, e.r) && !collidesRock(ex, e.y, e.r) && !collidesOre(ex, e.y, e.r) && !blockedX) e.x = ex; else { e.turn = 0; }
+      if(!isWater(e.x, ey) && !collidesTree(e.x, ey, e.r) && !collidesRock(e.x, ey, e.r) && !collidesOre(e.x, ey, e.r) && !blockedY) e.y = ey; else { e.turn = 0; }
       // brute smash walls on impact while charging
       if(e.type==='brute' && e.charging && (blockedX || blockedY)){
         const w = nearestWall(e.x, e.y, 26);
         if(w){ w.hp = Math.max(0, (w.hp!=null?w.hp:60) - 28); if(w.hp<=0){ const idx = walls.indexOf(w); if(idx>=0) walls.splice(idx,1); beep(120,0.06,'square'); } }
-
+      }
+      // brute smash rocks on impact while charging (drops stone-1, min 0)
+      if(e.type==='brute' && e.charging){
+        let nearestRo=null, nearestD=1e9;
+        for(const ro of rocks){ const d=Math.hypot(ro.x-e.x, ro.y-e.y); if(d<26 && d<nearestD){ nearestRo=ro; nearestD=d; } }
+        if(nearestRo){
+          const idx = rocks.indexOf(nearestRo);
+          if(idx>=0){
+            rocks.splice(idx,1);
+            const dropAmt = Math.max(0, Math.floor(Math.random()*2)); // 0-1 stone
+            if(dropAmt>0) drops.push({ x: nearestRo.x, y: nearestRo.y, r: 5, a: 1, val: dropAmt, type:'stone' });
+            beep(140,0.08,'square');
+          }
+        }
       }
     }
 
@@ -2535,7 +3901,19 @@
     // Loot drops animation and pickup
     for(const d of drops){ d.a = 0.6 + 0.4*Math.sin(performance.now()/250); }
     const pickR = 10;
-    for(let i=drops.length-1;i>=0;i--){ const d=drops[i]; const dist=Math.hypot(d.x-player.x,d.y-player.y); if(dist < pickR + d.r){ if(d.type==='wood'){ inventory.wood += d.val; pickupTexts.push({x:d.x,y:d.y,txt:`木材 +${d.val}`,color:'#c89b6e',a:1,vy:-28}); } else if(d.type==='apple'){ inventory.apple = (inventory.apple||0) + d.val; pickupTexts.push({x:d.x,y:d.y,txt:`苹果 +${d.val}`,color:'#ef4444',a:1,vy:-28}); } else { inventory.gem += d.val; pickupTexts.push({x:d.x,y:d.y,txt:`宝石 +${d.val}`,color:'#f5e663',a:1,vy:-28}); } sfxPickup(); drops.splice(i,1); } }
+    for(let i=drops.length-1;i>=0;i--){ const d=drops[i]; const dist=Math.hypot(d.x-player.x,d.y-player.y); if(dist < pickR + d.r){ 
+      if(d.type==='wood'){ inventory.wood += d.val; pickupTexts.push({x:d.x,y:d.y,txt:`木材 +${d.val}`,color:'#c89b6e',a:1,vy:-28}); }
+      else if(d.type==='stone'){ inventory.stone += d.val; pickupTexts.push({x:d.x,y:d.y,txt:`石块 +${d.val}`,color:'#8a8a94',a:1,vy:-28}); }
+      else if(d.type==='copper'){ inventory.copper += d.val; pickupTexts.push({x:d.x,y:d.y,txt:`铜矿 +${d.val}`,color:'#d97706',a:1,vy:-28}); }
+      else if(d.type==='tin'){ inventory.tin += d.val; pickupTexts.push({x:d.x,y:d.y,txt:`锡矿 +${d.val}`,color:'#94a3b8',a:1,vy:-28}); }
+      else if(d.type==='iron'){ inventory.iron += d.val; pickupTexts.push({x:d.x,y:d.y,txt:`铁矿 +${d.val}`,color:'#78716c',a:1,vy:-28}); }
+      else if(d.type==='silver'){ inventory.silver += d.val; pickupTexts.push({x:d.x,y:d.y,txt:`银矿 +${d.val}`,color:'#e5e7eb',a:1,vy:-28}); }
+      else if(d.type==='gold'){ inventory.gold += d.val; pickupTexts.push({x:d.x,y:d.y,txt:`金矿 +${d.val}`,color:'#fbbf24',a:1,vy:-28}); }
+      else if(d.type==='darkGold'){ inventory.darkGold += d.val; pickupTexts.push({x:d.x,y:d.y,txt:`黑金矿 +${d.val}`,color:'#a16207',a:1,vy:-28}); }
+      else if(d.type==='diamond'){ inventory.diamond += d.val; pickupTexts.push({x:d.x,y:d.y,txt:`钻石 +${d.val}`,color:'#06b6d4',a:1,vy:-28}); }
+      else if(d.type==='apple'){ inventory.apple = (inventory.apple||0) + d.val; pickupTexts.push({x:d.x,y:d.y,txt:`苹果 +${d.val}`,color:'#ef4444',a:1,vy:-28}); }
+      else { inventory.gem += d.val; pickupTexts.push({x:d.x,y:d.y,txt:`宝石 +${d.val}`,color:'#f5e663',a:1,vy:-28}); }
+      sfxPickup(); drops.splice(i,1); } }
     // update pickup floating texts
     for(const t of pickupTexts){ t.y += t.vy*dt; t.a -= 0.9*dt; }
     for(let i=pickupTexts.length-1;i>=0;i--) if(pickupTexts[i].a<=0) pickupTexts.splice(i,1);
@@ -2599,8 +3977,60 @@
   function drawEnemies(){
     for(const e of enemies){ if(!e.alive) continue;
       const ex = Math.round(e.x - camera.x), ey = Math.round(e.y - camera.y);
-      const c = e.color || '#c33';
-      ctx.fillStyle = c; ctx.beginPath(); ctx.arc(ex, ey, e.r, 0, Math.PI*2); ctx.fill();
+      
+      // 牛使用图片，其他敌人使用圆形
+      if(e.type === 'cow' && cowImgReady()){
+        // 统一使用第一张图片的尺寸作为基准，确保两帧大小一致
+        const cowScale = 2.0; // 牛的缩放系数，调整显示大小（缩小到80%）
+        const baseSize = e.r * 2 * cowScale; // 基准尺寸（增加缩放）
+        const imgWidth = cowImg1.naturalWidth || cowImg1.width;
+        const imgHeight = cowImg1.naturalHeight || cowImg1.height;
+        const aspectRatio = imgWidth / imgHeight;
+        
+        // 按高度为基准缩放，保持宽高比（固定使用第一张图片的比例）
+        const drawHeight = baseSize;
+        const drawWidth = drawHeight * aspectRatio;
+        
+        ctx.save();
+        
+        // 根据速度判断朝向
+        if(e.vx > 0.1) e.facingRight = true;
+        else if(e.vx < -0.1) e.facingRight = false;
+        // 如果速度接近0，保持上次朝向（不改变facingRight）
+        
+        // 移动时的上下抖动效果（只在patrol或attack状态时）
+        let bounceOffset = 0;
+        if(e.state === 'patrol' || e.attack){ // 只在巡逻或攻击时抖动
+          const time = performance.now() * 0.01; // 控制抖动速度
+          bounceOffset = Math.sin(time) * 4; // 抖动幅度为4像素（增大一倍）
+        }
+        
+        // 跑动动画：在patrol或attack状态时在两张图片之间切换
+        let currentFrame;
+        if(e.state === 'patrol' || e.attack){
+          // 每200ms切换一次帧（5帧/秒）
+          const frameTime = Math.floor(performance.now() / 200) % 2;
+          currentFrame = frameTime === 0 ? cowImg1 : cowImg2;
+        } else {
+          // rest状态使用第一帧
+          currentFrame = cowImg1;
+        }
+        
+        // 无论使用哪一帧，都用统一的drawWidth和drawHeight绘制
+        // 如果朝右，翻转图片
+        if(e.facingRight){
+          ctx.translate(ex, ey + bounceOffset);
+          ctx.scale(-1, 1);
+          ctx.drawImage(currentFrame, -drawWidth/2, -drawHeight/2, drawWidth, drawHeight);
+        } else {
+          ctx.drawImage(currentFrame, ex - drawWidth/2, ey - drawHeight/2 + bounceOffset, drawWidth, drawHeight);
+        }
+        
+        ctx.restore();
+      } else {
+        const c = e.color || '#c33';
+        ctx.fillStyle = c; ctx.beginPath(); ctx.arc(ex, ey, e.r, 0, Math.PI*2); ctx.fill();
+      }
       // aggro radius (toggle with G)
       if(showAggroRings){
         ctx.save();
@@ -2695,6 +4125,10 @@
         ctx.fillStyle='#c89b6e';
         ctx.beginPath(); ctx.arc(cx, cy, d.r, 0, Math.PI*2); ctx.fill();
         ctx.strokeStyle='#7a5a3a'; ctx.lineWidth=1; ctx.stroke();
+      } else if(d.type==='stone'){
+        ctx.fillStyle='#8a8a94';
+        ctx.beginPath(); ctx.arc(cx, cy, d.r, 0, Math.PI*2); ctx.fill();
+        ctx.strokeStyle='#4a4a52'; ctx.lineWidth=1; ctx.stroke();
       } else {
         ctx.fillStyle='#f5e663';
         ctx.beginPath(); ctx.arc(cx, cy, d.r, 0, Math.PI*2); ctx.fill();
@@ -2766,10 +4200,54 @@
     }
   }
 
+  function drawRocks(){
+    if(STYLE==='pixlake' && tiles.ready){
+      for(const ro of rocks){
+        const cx = Math.round(ro.x - camera.x), cy = Math.round(ro.y - camera.y);
+        const s = 2.24; // visual scale (80% of 2.8)
+        // contact shadow
+        ctx.save(); ctx.globalAlpha=0.28; ctx.fillStyle='#000'; ctx.beginPath(); ctx.ellipse(cx, cy + Math.round(3*s), Math.round(6*s), Math.round(3*s), 0, 0, Math.PI*2); ctx.fill(); ctx.restore();
+        // draw scaled rock centered
+        ctx.drawImage(tiles.rock, cx - 8*s, cy - 8*s, 16*s, 16*s);
+        if(selectedRockId === ro.id){
+          const ax = cx, ay = cy - 16;
+          ctx.save(); ctx.fillStyle='#d4d4d8'; ctx.strokeStyle='#a1a1aa'; ctx.lineWidth=1.5;
+          ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(ax-7, ay-10); ctx.lineTo(ax+7, ay-10); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.restore();
+        }
+      }
+      return;
+    }
+    // fallback: simple grey circles
+    for(const ro of rocks){
+      const cx = Math.round(ro.x - camera.x), cy = Math.round(ro.y - camera.y);
+      ctx.fillStyle = '#6b6b73'; ctx.beginPath(); ctx.arc(cx, cy, 10, 0, Math.PI*2); ctx.fill();
+      ctx.strokeStyle = '#4a4a52'; ctx.lineWidth = 2; ctx.stroke();
+      if(selectedRockId === ro.id){
+        const ax = cx, ay = cy - 16;
+        ctx.save(); ctx.fillStyle='#d4d4d8'; ctx.strokeStyle='#a1a1aa'; ctx.lineWidth=1.5;
+        ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(ax-7, ay-10); ctx.lineTo(ax+7, ay-10); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.restore();
+      }
+    }
+  }
+
   function collidesTree(x,y,rad){
     const r = (rad||8) + 8; // approximate canopy radius buffer
     const r2 = r*r;
     for(const t of trees){ const dx=t.x-x, dy=t.y-y; if(dx*dx+dy*dy <= r2) return true; }
+    return false;
+  }
+
+  function collidesRock(x,y,rad){
+    const r = (rad||8) + 8; // rock collision radius
+    const r2 = r*r;
+    for(const ro of rocks){ const dx=ro.x-x, dy=ro.y-y; if(dx*dx+dy*dy <= r2) return true; }
+    return false;
+  }
+
+  function collidesOre(x,y,rad){
+    const r = (rad||8) + 8;
+    const r2 = r*r;
+    for(const ore of ores){ const dx=ore.x-x, dy=ore.y-y; if(dx*dx+dy*dy <= r2) return true; }
     return false;
   }
 
@@ -2796,6 +4274,7 @@
     let ax=0, ay=0; const range = (radius||14) + cell*1.2;
     const range2 = range*range;
     for(const t of trees){ const dx=wx-t.x, dy=wy-t.y; const d2=dx*dx+dy*dy; if(d2<range2){ const d=Math.max(4, Math.hypot(dx,dy)); const push=(range - d)/range; ax += (dx/d)*push; ay += (dy/d)*push; } }
+    for(const ro of rocks){ const dx=wx-ro.x, dy=wy-ro.y; const d2=dx*dx+dy*dy; if(d2<range2){ const d=Math.max(4, Math.hypot(dx,dy)); const push=(range - d)/range; ax += (dx/d)*push; ay += (dy/d)*push; } }
     for(const w of walls){ const dx=wx-w.x, dy=wy-w.y; const d2=dx*dx+dy*dy; if(d2<range2){ const d=Math.max(4, Math.hypot(dx,dy)); const push=(range - d)/range; ax += (dx/d)*push; ay += (dy/d)*push; } }
     for(const b of benches){ const dx=wx-b.x, dy=wy-b.y; const d2=dx*dx+dy*dy; if(d2<range2){ const d=Math.max(4, Math.hypot(dx,dy)); const push=(range - d)/range; ax += (dx/d)*push; ay += (dy/d)*push; } }
     const len=Math.hypot(ax,ay)||0; if(len>0){ ax/=len; ay/=len; }
@@ -2976,28 +4455,55 @@
   }
   function clamp(v){ return Math.max(0, Math.min(255, v)); }
 
+  // ==========================================
+  // SECTION 7: 主游戏循环
+  // ==========================================
+  
   let last=performance.now();
   function loop(now){
     const dt = Math.min(0.033,(now-last)/1000); last=now;
     update(dt);
+    
+    // -------------------- 渲染 --------------------
     ctx.clearRect(0,0,canvas.width,canvas.height);
-    drawBackground();
-    drawGridOverlay();
-    drawEnemies();
-    drawBullets();
-    drawParticles();
-    drawDamageTexts();
-    drawDrops();
-    drawBenches();
-    drawChests();
-    drawWalls();
-    drawPlacementPreview();
-    drawPickupTexts();
-    drawTrees();
-    drawChopProgress();
-    drawPlayer();
-    drawBowCone();
-    drawMeleeFX();
+    
+    if(inDungeon){
+      // 地下城渲染
+      drawDungeon();
+      drawEnemies();
+      drawBullets();
+      drawParticles();
+      drawDamageTexts();
+      drawDrops();
+      drawPlayer();
+      drawBowCone();
+      drawMeleeFX();
+      drawPickupTexts();
+    } else {
+      // 地表渲染
+      drawBackground();
+      drawGridOverlay();
+      drawEnemies();
+      drawBullets();
+      drawParticles();
+      drawDamageTexts();
+      drawDrops();
+      drawBenches();
+      drawChests();
+      drawWalls();
+      drawDungeonEntrances();
+      drawPlacementPreview();
+      drawPickupTexts();
+      drawRocks();
+      drawOres();
+      drawTrees();
+      drawChopProgress();
+      drawMineProgress();
+      drawOreMineProgress();
+      drawPlayer();
+      drawBowCone();
+      drawMeleeFX();
+    }
     // hint: cancel charge
     if(player.equipped==='bow' && player.bowCharging){
       ctx.save();
@@ -3008,6 +4514,7 @@
       ctx.restore();
     }
     drawDayNightOverlay();
+    drawCenterHints();
     drawBackpack();
     drawWorkbenchUI();
     drawChestUI();
